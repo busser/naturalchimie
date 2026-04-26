@@ -40,6 +40,29 @@ horizontal or `[top/bottom]` for vertical, with a column. Example:
 
 Spawn pool is written as a set: `pool = {1, 2, 3}`.
 
+## Invariants for test design
+
+Every "Initial state" diagram in this file represents a board
+that the player could plausibly be staring at when their next
+turn begins. This implies an important invariant: **the initial
+state must be stable**. Specifically, no connected component of
+size ≥ 3 of any reactive tier (1 through 11) may exist in any
+initial state. If such a component existed, it would have already
+reacted before the player's turn began.
+
+Stable initial states may contain:
+
+- Tier-12 (gold nugget) components of any size, since gold is
+  inert.
+- Connected components of size 1 or 2 of any reactive tier.
+- Detonators in any column (always topmost in their column).
+
+Test designers must check this invariant manually before adding a
+new test. A diagram with three orthogonally-adjacent same-tier
+reactive elements as the initial state is a malformed test, even
+if the rest of the test description happens to produce the right
+final state.
+
 ## Section 1 — Drop and gravity
 
 ### 1.1 — Empty-board drop, horizontal pair
@@ -118,8 +141,11 @@ Pool unchanged. Score = 1 + 3 + 81 + 81 = 166.
 . . . . . . .
 . . . . . . .
 . . . 5 . . .
-. . . 5 5 . .
+. . . 7 5 . .
 ```
+
+(Initial state is stable: two tier-5s and one tier-7 — no
+same-tier component of size ≥ 3.)
 
 **Action:** drop horizontal pair `[1/2]` at column 4.
 **Final state:**
@@ -130,17 +156,16 @@ Pool unchanged. Score = 1 + 3 + 81 + 81 = 166.
 . . . . . . .
 . . . . . . .
 . . . 1 . . .
-. . . 5 . . .
-. . . 5 5 2 .
+. . . 5 2 . .
+. . . 7 5 . .
 ```
 
 The two halves of the pair fall independently to their respective
 columns' lowest empty cell. The tier-1 element lands in column 4
-on top of the existing column 4 stack; the tier-2 element falls
-all the way to row 1 of column 5.
-
-<note>This is wrong. The tier-2 element is on column 6 in the diagram. It should
-be on column 5, on top of the tier-5 element already there, so on row 2.</note>
+on top of the existing column 4 stack (row 3). The tier-2 element
+lands in column 5 on top of the single tier-5 already there (row
+2). No reactions trigger — no same-tier connected component of
+size ≥ 3 exists in the final state.
 
 ## Section 2 — Reactions and cascades
 
@@ -158,8 +183,9 @@ be on column 5, on top of the tier-5 element already there, so on row 2.</note>
 . 1 1 . . . .
 ```
 
-**Action:** drop horizontal pair `[1/3]` at column 3 (left=1 in
-column 3, right=3 in column 4).
+**Action:** drop horizontal pair `[1/5]` at column 4 (left=1 in
+column 4, right=5 in column 5).
+
 **Intermediate state after drop, before reactions:**
 
 ```
@@ -169,12 +195,14 @@ column 3, right=3 in column 4).
 . . . . . . .
 . . . . . . .
 . . . . . . .
-. 1 1 1 3 . .
+. 1 1 1 5 . .
 ```
 
-A connected component of three tier-1 elements at row 1, columns
-2–4 reacts. Landing cell = bottom-most, then left-most = (col 2,
-row 1).
+The three tier-1 elements at row 1, columns 2–4 form a connected
+component of size 3. They react. Landing cell = bottom-most, then
+left-most = (col 2, row 1). Result: tier-2 at (col 2, row 1).
+Gravity is a no-op (the cleared cells in row 1 had nothing above
+them to fall).
 
 **Final state:**
 
@@ -185,8 +213,11 @@ row 1).
 . . . . . . .
 . . . . . . .
 . . . . . . .
-. 2 . . 3 . .
+. 2 . . 5 . .
 ```
+
+Pool: tier 2 (already present). The tier-5 from the pair did not
+react. Score = 3 + 81 = 84.
 
 Pool gains tier 2 (already present) and tier 3 (newly produced if
 not already there). Score = 3 + 9 = 12.
@@ -201,28 +232,51 @@ not already there). Score = 3 + 9 = 12.
 . . . . . . .
 . . . . . . .
 . . . . . . .
+. . . . . . .
+. 1 1 . . . .
+```
+
+(Initial state is stable: a connected component of size 2 does
+not react.)
+
+**Action:** drop vertical pair (top=5, bottom=1) at column 2.
+
+Column 2 already has a tier-1 at row 1, so the bottom of the pair
+(tier 1) lands at row 2 and the top (tier 5) at row 3.
+
+**After drop, before reactions:**
+
+```
+. . . . . . .
+. . . . . . .
+. . . . . . .
+. . . . . . .
+. 5 . . . . .
 . 1 . . . . .
 . 1 1 . . . .
 ```
 
-**Action:** drop horizontal pair `[5/5]` at column 5.
-**Intermediate state after drop:**
+The three tier-1 elements at (col 2, row 1), (col 3, row 1), and
+(col 2, row 2) form an L of size 3 (orthogonally connected). They
+react. Landing cell = bottom-most, then left-most. The bottom-most
+row of the group is row 1 (occupied at columns 2 and 3); the
+left-most of those is column 2. Result: a tier-2 element at
+(col 2, row 1).
+
+**After reaction, before gravity:**
 
 ```
 . . . . . . .
 . . . . . . .
 . . . . . . .
 . . . . . . .
+. 5 . . . . .
 . . . . . . .
-. 1 . . . . .
-. 1 1 . 5 5 .
+. 2 . . . . .
 ```
 
-The three tier-1 elements form an L of size 3 (orthogonally
-connected). They react. Landing cell = bottom-most, then left-most.
-The bottom-most row of the group is row 1 (occupied at columns 2
-and 3); the left-most of those is column 2. Result: a tier-2
-element at (col 2, row 1).
+**Gravity.** Column 2's tier-5 at row 3 falls to row 2 (since
+row 1 is now occupied by the tier-2 from the reaction).
 
 **Final state:**
 
@@ -232,16 +286,11 @@ element at (col 2, row 1).
 . . . . . . .
 . . . . . . .
 . . . . . . .
-. . . . . . .
-. 2 . . 5 5 .
+. 5 . . . . .
+. 2 . . . . .
 ```
 
-Pool: tier 2 (already present) confirmed. Score = 3 + 81 + 81 =
-165. (The tier-1 elements that reacted no longer contribute.)
-
-<note>This one is strange. While the reaction is correct, the initial state is
-not stable. The 3 tier-1 elements should have reacted before the player had the
-opportunity to drop the active pair.</note>
+Pool: tier 2 (already present). Score = 3 + 81 = 84.
 
 ### 2.3 — 4-element merge (size > 3)
 
@@ -431,9 +480,23 @@ cascade). Score = 9.
 ```
 
 Reaction: tier-2 group at columns 1–4, size 4, reacts. Landing
-cell = (col 1, row 1).
+cell = (col 1, row 1). The reaction places tier-3 at (col 1, row 1).
 
-**After reaction:**
+**After reaction, before gravity:**
+
+```
+. . . . . . .
+. . . . . . .
+. . . . . . .
+. . . . . . .
+. . . . . . .
+. . . 3 . . .
+3 . . . . . .
+```
+
+**Gravity.** Column 4's tier-3 at row 2 falls to row 1.
+
+**After gravity (final stable state):**
 
 ```
 . . . . . . .
@@ -445,19 +508,8 @@ cell = (col 1, row 1).
 3 . . 3 . . .
 ```
 
-No more reactions (the two tier-3 cells aren't adjacent).
-
-**Final state:**
-
-```
-. . . . . . .
-. . . . . . .
-. . . . . . .
-. . . . . . .
-. . . . . . .
-. . . . . . .
-3 . . 3 . . .
-```
+The two tier-3 cells aren't adjacent (column 2 and 3 are empty
+between them). No more reactions. Cascade ends.
 
 Score before drop = 9. Score after = 9 + 9 = 18.
 
@@ -707,23 +759,83 @@ element in row 8, but the resulting reaction clears enough of the
 column to bring everything below row 8 by the time the cascade
 stabilizes.
 
-Example: column 4 has 7 tier-1 elements stacked, rows 1–7. Player
-drops vertical pair (bottom=1, top=2) at column 4. Bottom (tier
-1) lands at row 8; top (tier 2) at row 9. The 8 connected tier-1s
-(rows 1–8) react: size 8, single connected component. Landing
-cell = (col 4, row 1). After reaction: row 1 has tier 2, rows 2–8
-empty, row 9 has the original tier-2 from the pair top.
+**Initial state.** Column 4 has 5 tier-12 gold nuggets at rows
+1–5 (inert, do not react), with 2 tier-1 elements at rows 6 and
+7. All other cells empty.
 
-<note>This is a strange example, because a column of 7 tier-1 elements is not
-stable. Consider making it a column of 5 inert tier-12 elements with 2 tier-1
-elements on top.</note>
+```
+. . . 1 . . .
+. . . 1 . . .
+. . . C . . .
+. . . C . . .
+. . . C . . .
+. . . C . . .
+. . . C . . .
+```
 
-Gravity runs: the tier-2 at row 9 falls to row 2 (above the new
-tier-2 at row 1). That gives two tier-2 elements at rows 1 and 2 of
-column 4 — connected, size 2, no reaction.
+(Initial state is stable: the two tier-1 elements at rows 6–7 are
+a connected component of size 2 — not enough to react. Tier 12
+never reacts.)
 
-Final stable board: column 4 has tier 2 at rows 1 and 2, all
-other cells empty. Rows 8 and 9 are empty. **No loss.**
+**Action:** drop vertical pair (bottom=1, top=2) at column 4.
+
+The bottom of the pair (tier 1) lands at row 8 (above the column-7
+tier-1); the top of the pair (tier 2) lands at row 9.
+
+**After drop, before reactions** (showing all 9 rendered rows
+including the overflow zone, with row 9 at the top):
+
+```
+. . . 2 . . .   <- row 9
+. . . 1 . . .   <- row 8
+. . . 1 . . .   <- row 7
+. . . 1 . . .   <- row 6
+. . . C . . .   <- row 5
+. . . C . . .   <- row 4
+. . . C . . .   <- row 3
+. . . C . . .   <- row 2
+. . . C . . .   <- row 1
+```
+
+The three tier-1 elements at column 4, rows 6–8 are connected,
+size 3, react. Landing cell = bottom-most, then left-most =
+(col 4, row 6). Result: a tier-2 element at (col 4, row 6).
+
+**After reaction, before gravity:**
+
+```
+. . . 2 . . .   <- row 9
+. . . . . . .   <- row 8
+. . . . . . .   <- row 7
+. . . 2 . . .   <- row 6
+. . . C . . .   <- row 5
+. . . C . . .   <- row 4
+. . . C . . .   <- row 3
+. . . C . . .   <- row 2
+. . . C . . .   <- row 1
+```
+
+**Gravity.** Per-column gravity compacts column 4. The occupied
+cells in column 4 post-reaction are: rows 1–5 (gold nuggets), row
+6 (tier-2 from the reaction), and row 9 (tier-2 from the original
+pair top). Seven occupied cells total. Gravity places them
+contiguously starting from row 1, preserving relative order: rows
+1–5 = gold nugget, rows 6–7 = tier-2.
+
+**Final stable state:**
+
+```
+. . . 2 . . .   <- row 7
+. . . 2 . . .   <- row 6
+. . . C . . .   <- row 5
+. . . C . . .   <- row 4
+. . . C . . .   <- row 3
+. . . C . . .   <- row 2
+. . . C . . .   <- row 1
+```
+
+Rows 8 and 9 are empty. **No loss.** The two tier-2s at rows 6
+and 7 are a size-2 connected component — not enough to react.
 
 This test confirms the lose-condition is checked only on the
 stable post-cascade board.
