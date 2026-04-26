@@ -64,8 +64,8 @@ coding agent) working alongside a human reviewer. It is intentionally
 prescriptive: rules are stated as testable invariants, numbers are given
 where possible, and ambiguity is called out explicitly when it remains.
 
-The spec is split across six files. They are meant to be read in order
-the first time, then referenced individually thereafter:
+The spec is split across seven files. They are meant to be read
+in order the first time, then referenced individually thereafter:
 
 1. `00-overview.md` — this file.
 2. `01-gameplay-rules.md` — the rules of a single round: grid, controls,
@@ -76,8 +76,11 @@ the first time, then referenced individually thereafter:
 5. `04-visual-style.md` — the look: layout, palette, sprites, sidebar.
 6. `05-animations.md` — the feel: merge effect, cascade timing, dynamite
    explosion travel, particle work.
+7. `07-sprite-metadata-and-tooling.md` — how sprite art is integrated:
+   the metadata schema, the render math, and the live preview tool used
+   to author sprite metadata.
 
-A seventh file, `06-acceptance-tests.md`, lists concrete scenarios for
+A separate file, `06-acceptance-tests.md`, lists concrete scenarios for
 implementers to turn into automated tests. It is not part of the
 description of the game; it exists to verify that an implementation
 conforms.
