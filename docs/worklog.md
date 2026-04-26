@@ -3,6 +3,31 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-26 — Wired up ESLint and fixed the Vitest config types
+
+Now that the first core module exists, added the ESLint
+`no-restricted-imports` rule promised in `08-software-design.md`:
+`src/core/**` is forbidden from importing any sibling layer
+(`store`, `input`, `animation`, `renderer`, `assets`). Verified
+the rule fires by inserting a forbidden import and watching it
+fail. Also fixed a pre-existing typecheck error in
+`vite.config.ts` by importing `defineConfig` from `vitest/config`
+instead of `vite` + a triple-slash reference; the merged types
+now recognise the `test` block and `npm run typecheck` is clean.
+
+## 2026-04-26 — Picked an RNG and landed the first core module
+
+Closed the RNG open question by going with a hand-rolled immutable
+**Mulberry32** in `src/core/rng.ts`. The API is `createRng(seed)` →
+`Rng`, `nextFloat(rng)` → `[value, nextRng]` — no mutation, so the
+core can stay a pure function of `(state, input, rng)`. Considered
+`pure-rand` and `seedrandom`; rejected the latter because its
+mutable surface fights the pure-core design, and skipped the former
+to avoid a dependency for ~10 lines of code. Tests cover seed
+determinism, range, and immutability. Also added two new open
+questions (step application during animation, input buffering
+during cascades) that surfaced while reviewing the design.
+
 ## 2026-04-26 — Scaffolded the project
 
 Set up Vite + TypeScript (strict) + Vitest, with a multi-page Vite

@@ -77,9 +77,10 @@ cover, run via Vitest. The acceptance scenarios in
 
 The "core imports nothing outward" rule (see "Code
 organisation") is enforced with an ESLint
-`no-restricted-imports` rule scoped to `src/core/**`. The lint
-configuration is added when the first core module lands — until
-then there is nothing to constrain.
+`no-restricted-imports` rule scoped to `src/core/**`, configured
+in `eslint.config.js`. It bans imports from any sibling layer
+(`store`, `input`, `animation`, `renderer`, `assets`). Run
+`npm run lint` to check.
 
 ## Logic and animation sequencing
 
@@ -148,11 +149,30 @@ Canvas 2D context.
 Particles (the sparkles in the merge animation, the smoke puff
 after the dynamite blast) are drawn programmatically.
 
+## RNG
+
+The single seedable RNG required by `03-spawning.md` lives in
+`src/core/rng.ts` as a hand-rolled **Mulberry32** generator
+(~5 lines, no dependency, period 2³², statistically fine for a
+puzzle game). The state is an opaque `Rng` value and `nextFloat`
+returns `[value, nextRng]` rather than mutating in place, so the
+core stays purely functional: `(state, input, rng) → (state',
+steps, rng')`.
+
 ## Open questions
 
 - **Step shape and granularity for the animation timeline.** To
   be designed when the animation layer is built.
-- **RNG and determinism.** The spec mandates a single seedable
-  RNG instance for all gameplay-affecting rolls, exposed for
-  tests (see `03-spawning.md`). The concrete library or
-  implementation is not yet chosen.
+- **How the store applies steps during animation playback.** The
+  core returns the entire step list eagerly, but it is not
+  decided whether the store advances its logical state one step
+  at a time as the animation plays each one, or whether it
+  jumps straight to the post-cascade state and the animation
+  layer holds its own visual state until playback finishes.
+  This affects what the renderer reads from the store and how
+  mid-cascade frames are produced.
+- **Input handling while a cascade is playing.** Input is locked
+  during cascade animation, but it is not specified whether key
+  presses during the lock are dropped or buffered for the next
+  stable board. The choice affects feel, especially for fast
+  players chaining drops.
