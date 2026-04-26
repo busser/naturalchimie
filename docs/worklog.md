@@ -3,6 +3,29 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-27 — Pinned down the concrete state shape
+
+Closed the concrete-state-shape open question and landed
+`src/core/state.ts`. `State` carries `board`, `active`,
+`preview`, and `score`. `Cell` is a discriminated union with
+`"empty"` as a member; `active` is plain `ActivePiece | null`
+since absence has no fields and is mostly a guard. `Pair`
+carries `first`/`second` labels alongside `anchor` and
+`orientation` so rotation can preserve identity per the spec.
+Step events are defined with their `kind` discriminators only;
+payloads will land with the steps that produce them.
+
+The score-in-state decision flipped during discussion: I'd
+called it derivable from the board, but the spec rule "score
+updates only on a stable board" makes it genuinely stateful —
+mid-cascade snapshots carry the prior stable score forward
+while the board changes underneath, so deriving from the
+current board would produce a fluctuating number. Putting it
+in core state also keeps the `3^(tier−1)` formula behind the
+core boundary, so the renderer just reads a number. Documented
+the rationale under a new "State shape" section in
+`08-software-design.md`.
+
 ## 2026-04-26 — Placed the active pair in core state
 
 Closed the active-pair open question in `08-software-design.md`:

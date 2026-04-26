@@ -276,6 +276,54 @@ The spec text in `01-gameplay-rules.md` uses 1-indexed coordinates
 coordinate ever surfaces in the UI, the +1 offset is applied at
 the rendering boundary.
 
+## State shape
+
+The concrete TypeScript types live in `src/core/state.ts`. The
+top-level shape is:
+
+```ts
+type State = {
+  board: Board;            // [row][column], 7 wide × 9 tall (rows 0–6 playfield, 7–8 overflow)
+  active: ActivePiece | null;
+  preview: Piece;
+  score: number;
+};
+```
+
+A few choices are worth calling out, since they propagate through
+the rest of the codebase:
+
+- **`Cell` is a discriminated union** with `"empty"` as a member
+  rather than `null`-as-empty. Matches the project preference for
+  exhaustive case handling (see "Tech stack") and lets cell
+  handlers be uniform `switch`es.
+- **`active: ActivePiece | null` is plain nullable**, not a
+  union member. Absence of a piece is a guard at the top of input
+  handling and step generation; it has no fields of its own and
+  doesn't benefit from being grouped under the discriminator.
+- **Preview lives in the state.** The next piece is determined as
+  soon as the previous one is committed, so it's part of game
+  truth — not presentation. Snapshots therefore fully describe
+  what the player can see.
+- **Score lives in the state**, even though it is computable from
+  the board. The spec rule "the score updates only on a stable
+  board" makes it genuinely stateful: during a cascade, the
+  displayed score holds at the previous stable value while the
+  board changes underneath. Carrying the score forward through
+  cascade snapshots and re-syncing on stable-board steps is the
+  natural way to honour that rule. It also keeps the `3^(tier−1)`
+  formula inside the core, so the renderer reads a number rather
+  than knowing about powers of three.
+- **`Pair` carries first/second labels**, not just two cells. The
+  spec rotation rules ("the element that was on the right ends
+  up on the top") preserve identity through rotation, which an
+  unlabelled "two cells" representation would lose.
+
+Step events under `StepEvent` are stubbed with their `kind`
+discriminator only. Each event's payload is filled in alongside
+the implementation of the step that produces it, so we don't
+speculate about what an animation needs before writing it.
+
 ## Open questions
 
 - **Game-over signal shape.** Overflow detection (a new pair
@@ -288,10 +336,6 @@ the rendering boundary.
   central `requestAnimationFrame` driver; tween library vs.
   hand-rolled interpolation. Touches every step kind, so worth
   deciding before the first step is implemented.
-- **Concrete state shape.** `Board`, `Pair`, the input type,
-  and the discriminated union of step kinds are described in
-  prose but not yet written as TypeScript. Pinning these down
-  forces a resolution to the active-pair question above.
 - **Layer wiring in `main.ts`.** How the input layer dispatches
   to the store, how the store invokes core, and how the
   animation queue is fed and drained. Currently only described
