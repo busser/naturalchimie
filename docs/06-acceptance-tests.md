@@ -6,8 +6,8 @@ suitable for translating into an automated test. The scenarios are
 written in a notation defined below.
 
 These tests cover **gameplay logic only**: grid state transitions,
-scoring, spawn-pool growth, and lose conditions. They do not cover
-visual presentation or animation timing.
+scoring, spawn-pool composition, and lose conditions. They do not
+cover visual presentation or animation timing.
 
 ## Notation
 
@@ -700,7 +700,13 @@ The cascade ends.
 
 Score = 0.
 
-## Section 4 — Spawn pool growth
+## Section 4 — Spawn pool composition
+
+The pool is derived from the board as
+`{1..min(11, max(2, highest_tier_on_board))}`. The tests in this
+section assert that the derived pool — and therefore what the
+next draw can produce — matches the rule across the relevant
+shapes of board state.
 
 ### 4.1 — Initial pool
 
@@ -717,19 +723,33 @@ contains `{1, 2, 3}`. Verify that the *next* spawned pair (i.e.
 the pair drawn for the preview after the producing drop) may
 contain a tier-3 element.
 
-### 4.3 — Pool growth from a deep cascade
+### 4.3 — Pool spans intermediate tiers after a deep cascade
 
 Construct a board state where dropping a single pair causes a
 3-step cascade producing tier-3 then tier-4 then tier-5 (e.g. via
 a stack of pre-arranged tier-2s). Verify that after the cascade
 ends, the pool contains `{1, 2, 3, 4, 5}` — all intermediate
-tiers, not just the final one.
+tiers, not just the final one. This holds even though the
+intermediate tier-3 and tier-4 elements were consumed during the
+cascade and no longer sit on the board: the contiguous-range rule
+fills them in.
 
 ### 4.4 — Tier 12 never enters the pool
 
 Construct a board state where dropping a pair causes a tier-11
 group to react (producing a gold nugget). Verify that after the
-cascade, the pool does **not** contain tier 12.
+cascade, the pool does **not** contain tier 12, even though the
+gold nugget is now sitting on the board.
+
+### 4.5 — Pool shrinks when the highest tier is destroyed
+
+Construct a board state with exactly one tier-5 element and
+several lower-tier elements, with the pool therefore at
+`{1, 2, 3, 4, 5}`. Trigger a dynamite (or detonator) blast
+positioned so it destroys the lone tier-5. Verify that on the
+post-cascade board, with the highest remaining tier at 4, the
+derived pool is `{1, 2, 3, 4}` and that no subsequent draw can
+produce a tier-5 element until the player produces another one.
 
 ## Section 5 — Lose condition
 

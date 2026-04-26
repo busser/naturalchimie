@@ -3,6 +3,30 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-26 — Settled coordinates and the spawn-pool model
+
+Closed two more open questions in `08-software-design.md`.
+
+Coordinate convention: in code, row 0 sits at the floor and
+column 0 on the left, so `board[0][0]` is the bottom-left cell.
+Gravity, "lowest empty cell," and overflow all read naturally
+under this convention. The spec text's 1-indexed prose stays as
+is for human readability; the +1 offset is a rendering-boundary
+concern.
+
+Spawn pool: the pool is now a pure function of the board,
+`{1..min(11, max(2, highest_tier_on_board))}`, with no stored
+mutable pool and no per-cascade update step. As a consequence
+the pool can **shrink** if dynamite or a detonator destroys the
+last instance of the current highest tier — intentional, and
+thematically nice (the alchemist forgot the recipe). Updated
+`03-spawning.md` to drop the monotonic-growth language, replace
+`on_cascade_complete` with a `compute_pool(board)` helper, and
+reframe the cascade-sequence note around the new model.
+
+Two open questions remain: active pair in core state vs.
+store-only, and the game-over signal shape.
+
 ## 2026-04-26 — Pinned down input buffering
 
 Closed the input-handling open question. Inputs are buffered, but

@@ -21,30 +21,33 @@ Pairs are by far the most common.
 ## The element spawn pool
 
 The spawn pool is the set of **tiers** the game may currently draw
-from when generating an element. The gold nugget (tier 12) is
-**never** in the spawn pool: it can only be produced through a
-tier-11 reaction.
+from when generating an element. It is a **pure function of the
+current board**, not stored state:
 
-### Initial pool
+```
+pool = {1, 2, ..., n}   where   n = min(11, max(2, highest_tier_on_board))
+```
 
-At the start of a round, the spawn pool contains exactly tiers 1
-and 2. No other tiers are spawnable until they are produced.
+Equivalently: take the highest tier currently on the board, clamp
+to the range [2, 11], and the pool is every tier from 1 up to that
+value.
 
-### Pool growth
+A few consequences fall out of this rule:
 
-The pool grows when the player **produces** an element of a tier
-not yet in the pool. Concretely: at the end of a cascade, after the
-board stabilizes, the game inspects every reaction that occurred
-during that cascade. For each reaction, the resulting tier `n + 1`
-is added to the spawn pool if not already present.
-
-Pool growth happens once per stable-board event, not once per
-reaction. The pool is monotonically growing within a round; it
-never shrinks. (A round is a single playthrough; pool state resets
-on game over.)
-
-The pool may grow up to and including tier 11. **Tier 12 is never
-added to the pool.**
+- At round start the board is empty, so `pool = {1, 2}`.
+- Once a player produces a tier-`n` element, that tier is in the
+  pool from the next draw onward, and remains so as long as a
+  tier-`n` (or higher) element is on the board.
+- Tiers below the max are always in the pool, even if no element
+  of that tier is currently on the board. The range is contiguous.
+- The pool **can shrink**. If every instance of the current
+  highest tier is destroyed (e.g. by dynamite or a detonator) and
+  no element of that tier remains, the next draw recomputes
+  against a lower max. This is intentional — the pool reflects
+  what the alchemist has currently demonstrated they can produce.
+- The gold nugget (tier 12) is **never** in the pool: it can only
+  be produced through a tier-11 reaction. The `min(11, …)` clamp
+  enforces this even when a gold nugget sits on the board.
 
 ### Distribution
 
@@ -108,11 +111,11 @@ The two elements of a pair are sampled **independently**. There
 is no rule against the two being the same tier; in fact this is
 common, especially early when only tiers 1 and 2 exist.
 
-### Pool-growth hint to implementers
+### Sequencing relative to the cascade
 
-A common LLM-generated bug: drawing both elements of a pair *then*
-adding the new tier to the pool only after the next cascade that
-produces it. The sequencing here is correct as written:
+The pool is recomputed at the moment of drawing, against whatever
+board state exists then. The relevant ordering for a single drop
+is:
 
 1. Player drops the active pair.
 2. If the pair (or solo item) lands on a detonator, the detonator
@@ -120,15 +123,14 @@ produces it. The sequencing here is correct as written:
    blast resolves, then gravity, then the cascade proceeds with
    reactions.
 3. Cascade runs: reactions and gravity resolve until stable.
-4. **Pool is updated** based on tiers produced in this cascade.
-5. **Then** the next pair (already drawn before this drop) slides
-   from the preview into the active position.
-6. **Then** a new pair is drawn (using the now-updated pool) and
-   placed in the preview.
+4. The next pair (already drawn before this drop) slides from the
+   preview into the active position.
+5. A freshly generated piece is drawn against the **post-cascade**
+   board and placed in the preview.
 
-Because the preview shows a pair that was drawn *one drop ago*,
-there is a one-drop delay between unlocking a tier and seeing it
-appear in the preview window.
+Because the preview shows a piece that was drawn *one drop ago*,
+there is a one-drop delay between unlocking (or losing) a tier
+and seeing the change reflected in the preview window.
 
 ## Dynamite and detonator spawning
 
@@ -172,11 +174,9 @@ their *current* move with that knowledge.
 The complete spawn procedure for a single piece, in pseudocode:
 
 ```
-function generate_next_piece(state):
-    # state contains: pool (set of tiers), board
-
+function generate_next_piece(board):
     # 1. Decide piece kind
-    occupied = count_occupied_cells(state.board)
+    occupied = count_occupied_cells(board)
     if occupied >= 20:
         roll = uniform_random_in_[0, 1)
         if roll < 0.03:
@@ -185,30 +185,33 @@ function generate_next_piece(state):
             return Detonator()
         # else fall through to normal pair
 
-    # 2. Generate a normal pair
+    # 2. Generate a normal pair from the current pool.
+    pool = compute_pool(board)
     return Pair(
-        left  = sample_tier(state.pool),
-        right = sample_tier(state.pool),
+        left  = sample_tier(pool),
+        right = sample_tier(pool),
     )
+
+function compute_pool(board):
+    max_tier = max(tier of each occupied cell, default = 0)
+    n = min(11, max(2, max_tier))
+    return {1, 2, ..., n}
 
 function sample_tier(pool):
     max_t = max(pool)
     weights = { t: max_t - t + 1 for t in pool }
     return weighted_random_choice(weights)
-
-function on_cascade_complete(state, tiers_produced_during_cascade):
-    for t in tiers_produced_during_cascade:
-        if t < 12:
-            state.pool.add(t)
 ```
 
-Note that `tiers_produced_during_cascade` includes every tier that
-appeared as the result of any reaction in the cascade — even
-intermediate tiers that were themselves consumed by a later step of
-the same cascade. (Example: three orange potions react into a
-purple potion, and three purple potions including the new one
-react into wheat. Both purple and wheat are added to the pool in
-this cascade.)
+Because the pool depends on whatever is currently on the board, an
+intermediate tier produced and then consumed within the same
+cascade does not, by itself, hold that tier in the pool — only the
+post-cascade contents matter. The contiguous-range rule does the
+work instead. (Example: three orange potions (tier 3) react into a
+purple, and three purples — including the new one — react into
+wheat. After the cascade the board holds a wheat (tier 5) but no
+fresh oranges or purples. The pool for the next draw is `{1..5}`,
+including tiers 3 and 4 by virtue of the contiguous range.)
 
 ## Things that are *not* part of spawning
 

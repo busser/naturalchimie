@@ -250,6 +250,24 @@ returns `[value, nextRng]` rather than mutating in place, so the
 core stays purely functional: `(state, input, rng) → (state',
 steps, rng')`.
 
+## Coordinate convention
+
+In code, the playfield is indexed with **row 0 at the floor**,
+increasing upward, and **column 0 on the left**. So `board[0][0]`
+is the bottom-left cell, `board[6][6]` is the top-right of the
+7×7 playfield, and rows 7–8 are the overflow zone above it.
+
+This makes gravity and "lowest empty cell" read naturally:
+"lowest empty cell in column `c`" is the smallest `r` such that
+`board[r][c]` is empty; gravity moves elements toward smaller
+row indices; overflow on a stable board is "any element with
+`row >= 7`."
+
+The spec text in `01-gameplay-rules.md` uses 1-indexed coordinates
+(row 1 = floor) for human readability. Code is 0-indexed; if any
+coordinate ever surfaces in the UI, the +1 offset is applied at
+the rendering boundary.
+
 ## Open questions
 
 - **Active pair: in core state or store-only?** The "Code
@@ -266,14 +284,3 @@ steps, rng')`.
   on the post-step snapshot, a terminal step kind
   (`"game-over"`), or both. Affects whether the animation and
   renderer layers need a special case or just read the snapshot.
-- **Coordinate convention.** Row 0 at the top or at the bottom
-  of the 7×7 grid? Gravity, "lowest empty cell", and overflow
-  checks all read more or less naturally depending on the
-  choice. Small but worth fixing before the first board module
-  lands so tests and helpers don't have to be revisited.
-- **Spawn pool growth timing.** `03-spawning.md` says the pool
-  grows as the player produces new elements. Unclear whether
-  the pool advances on the merge step itself (so a later step
-  in the same cascade could spawn the new tier) or only once
-  the cascade settles. Matters for determinism and for the
-  exact step-by-step RNG trace.
