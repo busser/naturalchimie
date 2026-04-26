@@ -32,8 +32,8 @@ order from purest to most side-effecting:
   input actions, calls into core, exposes a subscribe interface
   for the renderer.
 - **Input** — keyboard handler that translates key events into
-  store actions. Locks input while a cascade animation is
-  playing.
+  store actions. Buffering and held-key behavior are described
+  in "Input handling" below.
 - **Animation** — consumes the timeline produced by the core's
   cascade simulator and schedules its visual playback. See
   "Logic and animation sequencing" below.
@@ -153,6 +153,52 @@ tier-N+1 element) before the visual transition has played.
 The animation layer holds animation state only: no logical
 board, no fork from the core's truth.
 
+## Input handling
+
+Inputs are buffered, but only while an active pair is on the
+board. Inputs that arrive before a pair has spawned, or after
+its drop has been committed, are ignored.
+
+### Buffering
+
+Each fresh `keydown` (with `event.repeat === false`) enqueues
+one action. The buffer drains one action per pair-animation
+cycle: when the current rotate, shift, or landing animation
+completes, the next buffered action plays. Rapid double-taps
+of rotate therefore produce two rotations even if the second
+press lands during the first rotation's animation.
+
+There is no cap on buffer length. Animations are short and a
+real player cannot queue more than a handful of presses ahead.
+Implementers should not add a "safety" cap.
+
+### Drop closes the buffer
+
+Once `drop` is pressed, any further input for this pair —
+including during the drop's fall animation — is discarded. The
+cascade that follows has no active pair to act on, so a
+draining buffer would have nothing to apply.
+
+### Held keys
+
+OS-level auto-repeat (`keydown` events with `event.repeat ===
+true`) is ignored. The input layer rolls its own:
+
+- Track which recognised keys are currently held (via
+  `keydown` / `keyup` transitions).
+- When the active pair is idle and the buffer is empty, if a
+  movement key is still held, fire one input for that key.
+
+The repeat rate is therefore one action per animation cycle:
+the player rotates or shifts continuously while holding, and
+when they release, the in-flight animation completes and
+motion stops.
+
+Held-key state tracks hardware, not the pair. A held `down`
+arrow at the moment a new pair spawns therefore drops that
+pair immediately. This is intentional and falls out of the
+rule consistently.
+
 ## Rendering surface
 
 The playfield and its particles render to a single **Canvas 2D**
@@ -206,8 +252,28 @@ steps, rng')`.
 
 ## Open questions
 
-- **Input handling while a cascade is playing.** Input is locked
-  during cascade animation, but it is not specified whether key
-  presses during the lock are dropped or buffered for the next
-  stable board. The choice affects feel, especially for fast
-  players chaining drops.
+- **Active pair: in core state or store-only?** The "Code
+  organisation" section lists active-pair position as
+  presentation-only state in the store, but the core's
+  `(state, input, rng) → (state', steps, rng')` signature
+  applies to shift and rotate too — which means the core has to
+  know about the pair. The boundary needs to be drawn
+  explicitly: either the pair lives in core state and the store
+  mirrors a derived view, or the core takes the pair as part of
+  its input and threads it through.
+- **Game-over signal shape.** Overflow detection (a new pair
+  cannot be placed) needs to surface somewhere. Options: a flag
+  on the post-step snapshot, a terminal step kind
+  (`"game-over"`), or both. Affects whether the animation and
+  renderer layers need a special case or just read the snapshot.
+- **Coordinate convention.** Row 0 at the top or at the bottom
+  of the 7×7 grid? Gravity, "lowest empty cell", and overflow
+  checks all read more or less naturally depending on the
+  choice. Small but worth fixing before the first board module
+  lands so tests and helpers don't have to be revisited.
+- **Spawn pool growth timing.** `03-spawning.md` says the pool
+  grows as the player produces new elements. Unclear whether
+  the pool advances on the merge step itself (so a later step
+  in the same cascade could spawn the new tier) or only once
+  the cascade settles. Matters for determinism and for the
+  exact step-by-step RNG trace.

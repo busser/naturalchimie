@@ -3,6 +3,20 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-26 — Pinned down input buffering
+
+Closed the input-handling open question. Inputs are buffered, but
+only while an active pair exists — presses during cascades have no
+pair to act on, so they're ignored. Within active-pair control,
+each fresh `keydown` enqueues one action and the buffer drains one
+per animation cycle, so rapid double-taps of rotate produce two
+rotations even if the second press lands mid-animation. Drop
+closes the buffer for that pair. Held keys are handled by ignoring
+OS auto-repeat and rolling our own: when the pair is idle and the
+buffer is empty, a held key fires one action per animation cycle.
+Held-key state tracks hardware, not the pair, so a held `down` at
+spawn time drops the new pair immediately.
+
 ## 2026-04-26 — Designed the step/playback model
 
 Closed two of the three open questions in
