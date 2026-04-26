@@ -265,11 +265,12 @@ element in row 8 or 9):
    about 50% brightness.
 3. Centered over the playfield, a "Game Over" text appears (in the
    game's display typeface, large, deep-brown color, slightly
-   tilted for character). Below it, in smaller text: "Press space
-   to play again."
+   tilted for character). Below it, the player's final score in
+   the same typeface, smaller. Below that, in smaller text still:
+   "Press space to play again."
 4. Pressing **space** restarts the round from scratch: empty
-   board, fresh pool of {tier 1, tier 2}, score 0, new active
-   pair, new preview piece.
+   board, fresh RNG seed, score 0, new active pair, new preview
+   piece. Each restart is a different run.
 
 The game-over screen is the only modal state in the game.
 

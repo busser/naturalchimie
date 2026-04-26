@@ -161,6 +161,27 @@ tier-N+1 element) before the visual transition has played.
 The animation layer holds animation state only: no logical
 board, no fork from the core's truth.
 
+### Game over
+
+When a cascade settles into a board that satisfies the spec's
+lose condition (an element above the playfield on a stable
+board), the core appends a terminal `"game-over"` step to the
+timeline. The step's snapshot carries the prior board forward
+and sets `active: null`. The animation layer plays the
+fade-and-overlay visual described under "Game over" in
+`05-animations.md`; once it completes the queue is empty, and
+input is locked simply because there is no active pair to act
+on.
+
+The terminal step is the only signal — there is no separate
+flag on the snapshot. A flag would duplicate `active: null`
+plus an empty queue, and using a step keeps the renderer's
+"draw the current snapshot" path uniform.
+
+Restart is triggered by the input layer on `Space` after the
+fade completes. It discards the current state and reseeds the
+RNG, so each restart is a different run.
+
 ## Input handling
 
 Inputs are buffered, but only while an active pair is on the
@@ -326,11 +347,6 @@ speculate about what an animation needs before writing it.
 
 ## Open questions
 
-- **Game-over signal shape.** Overflow detection (a new pair
-  cannot be placed) needs to surface somewhere. Options: a flag
-  on the post-step snapshot, a terminal step kind
-  (`"game-over"`), or both. Affects whether the animation and
-  renderer layers need a special case or just read the snapshot.
 - **Animation layer API.** The step shape is settled, but how
   the animation layer is driven isn't. Per-step promise vs. a
   central `requestAnimationFrame` driver; tween library vs.
@@ -340,8 +356,3 @@ speculate about what an animation needs before writing it.
   to the store, how the store invokes core, and how the
   animation queue is fed and drained. Currently only described
   abstractly under "Logic and animation sequencing."
-- **Game-over UX.** The spec covers detection but not the
-  player-facing behavior on overflow: overlay, restart prompt,
-  score freeze, input lockout. Likely a spec gap (probably
-  belongs in `01-gameplay-rules.md` or `04-visual-style.md`)
-  rather than a design gap.

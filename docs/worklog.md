@@ -3,6 +3,29 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-27 — Closed the game-over open questions
+
+Picked the terminal-step shape for the game-over signal: when a
+cascade settles into a losing position the core appends a
+`"game-over"` step whose snapshot carries the prior board forward
+with `active: null`. The animation layer plays the
+fade-and-overlay visual; once it completes the queue is empty,
+and input is locked because there is no active pair to act on.
+No flag on the snapshot — it would duplicate `active: null` plus
+an empty queue, and the terminal step keeps the renderer's "draw
+the current snapshot" path uniform.
+
+Also closed the game-over UX gap. Most of the behavior was
+already in `05-animations.md` (dim overlay, "Game Over" text,
+"Press space to play again"); added the player's final score to
+the screen and made the fresh-seed restart explicit. Considered
+"any key" for the restart prompt but chose space specifically:
+when game-over hits the player likely has a movement key held or
+is mid-press, and any-key would restart instantly before they
+read their score. Two open questions remain in
+`08-software-design.md`: animation layer API and layer wiring in
+`main.ts`.
+
 ## 2026-04-27 — Pinned down the concrete state shape
 
 Closed the concrete-state-shape open question and landed
