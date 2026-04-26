@@ -3,6 +3,24 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-26 — Designed the step/playback model
+
+Closed two of the three open questions in
+`08-software-design.md`. The core's signature is now
+`(state, input, rng) → (state', steps, rng')` for *every*
+input — drop, shift, rotate alike — so the timeline always
+covers the full consequence of an input rather than just the
+post-drop cascade. Each step carries a kind discriminator, a
+payload, and the post-step board snapshot: kind+payload feed
+the animation layer, snapshot feeds the store and renderer.
+State stays a pure board position with no animation concepts
+leaking in. Concurrent effects (e.g. two disjoint matches from
+one drop) live inside a single step. The store advances
+`currentSnapshot` on each animation's *completion*, not start,
+so the renderer never shows post-step results before the
+visual transition has played. Input buffering during cascades
+is still open.
+
 ## 2026-04-26 — Wired up ESLint and fixed the Vitest config types
 
 Now that the first core module exists, added the ESLint

@@ -84,29 +84,74 @@ in `eslint.config.js`. It bans imports from any sibling layer
 
 ## Logic and animation sequencing
 
-When the player presses the down arrow, the entire consequence
-of that input — the drop, every reaction, every gravity step,
-any detonations, the resulting score and pool changes — is
-fully determined by the current state and the seeded RNG. The
-player has no further input until the sequence completes.
+Every player input goes through the core. The core is a pure
+function `(state, input, rng) → (state', steps, rng')`: given
+the current state, an input, and the RNG, it returns the new
+state, an ordered list of steps describing how to get there,
+and the advanced RNG. This holds for all inputs, not just the
+down-arrow drop — left/right shifts and rotations also produce
+step lists. Cosmetic inputs yield a single-step list; a drop
+that triggers a long cascade yields many. The core stays
+completely time-free, and acceptance tests assert against the
+returned state and step list directly.
 
-We exploit this: the core's cascade simulator computes the
-**entire** sequence eagerly and returns it as an ordered list
-of steps. The animation layer then plays the steps back as a
-timeline, one after another. This keeps the core completely
-time-free (a pure function of `(state, input) → step[]`) and
-makes the test suite trivial — acceptance tests assert against
-the final state and the step list, both of which fall out of
-the core directly.
+### Step shape
 
-A "step" is a unit of state transition with a single
-self-contained animation. Granularity is whatever the animation
-layer finds easiest to render: the dynamite blast is one step,
-even though its visual plays out cell by cell as it travels
-downward, because the post-blast state is fully determined and
-the cell-by-cell timing belongs to the animation, not the
-state. The exact step shape is deferred until the animation
-layer is built.
+A "step" is one unit of state transition with a self-contained
+animation. Each step carries:
+
+- a **kind** discriminator (`"pair-shift"`, `"pair-rotate"`,
+  `"pair-land"`, `"merge"`, `"gravity"`, `"detonate"`, etc.),
+- a **payload** describing the event (which cells merged into
+  which target cell, how far each column fell, where the
+  dynamite landed, …),
+- the **post-step snapshot** of the board.
+
+The kind and payload tell the animation layer what visual to
+play. The snapshot tells the store and renderer what is
+currently true on the board. The redundancy is deliberate: it
+lets the animation layer stay pure visuals (`"play a merge of
+cells A, B, C into D"`) and the renderer stay trivial (`"draw
+the current board"`), with no diffing or state inference on
+either side.
+
+State itself only ever describes a valid game position — there
+are no "reaction-pending" markers or other animation concepts
+in the state shape. Anything in flight lives in the step, not
+the state.
+
+Granularity is whatever the animation layer finds easiest to
+render. The dynamite blast is one step even though its visual
+plays out cell by cell as it travels downward, because the
+post-blast state is fully determined and the cell-level timing
+belongs to the animation. Concurrent effects also belong
+inside a single step: when one drop produces two disjoint
+matches in different parts of the board, both merges play
+simultaneously as one step rather than serialised into two.
+
+### Playback
+
+The store holds a `currentSnapshot` (the latest committed
+board) and a queue of pending steps. Playback proceeds:
+
+1. The animation layer reads the next step's kind and payload
+   and plays the visual transition from `currentSnapshot` to
+   the step's post-step snapshot.
+2. The renderer draws `currentSnapshot` each frame; the
+   animation layer overdraws the transition on top of the
+   affected cells.
+3. When the animation completes, the store sets
+   `currentSnapshot` to the step's snapshot and advances to
+   the next step.
+4. When the queue empties, the board is stable and input
+   unlocks.
+
+The store therefore advances one step at a time, on each
+animation's *completion* — not on its start. This avoids the
+renderer ever showing post-step results (e.g. the merged
+tier-N+1 element) before the visual transition has played.
+The animation layer holds animation state only: no logical
+board, no fork from the core's truth.
 
 ## Rendering surface
 
@@ -161,16 +206,6 @@ steps, rng')`.
 
 ## Open questions
 
-- **Step shape and granularity for the animation timeline.** To
-  be designed when the animation layer is built.
-- **How the store applies steps during animation playback.** The
-  core returns the entire step list eagerly, but it is not
-  decided whether the store advances its logical state one step
-  at a time as the animation plays each one, or whether it
-  jumps straight to the post-cascade state and the animation
-  layer holds its own visual state until playback finishes.
-  This affects what the renderer reads from the store and how
-  mid-cascade frames are produced.
 - **Input handling while a cascade is playing.** Input is locked
   during cascade animation, but it is not specified whether key
   presses during the lock are dropped or buffered for the next
