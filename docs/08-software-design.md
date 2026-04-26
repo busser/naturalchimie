@@ -42,6 +42,45 @@ order from purest to most side-effecting:
 - **Assets** — sprite drawing and loading. See "Sprites" below.
 - **Main** — wires the layers together and starts the loop.
 
+## Project structure
+
+The on-disk layout mirrors the layers above. Each layer is a
+directory under `src/`, created when that layer is first
+implemented rather than as an empty stub.
+
+```
+naturalchimie/
+├── index.html               # Vite entry → src/main.ts
+├── package.json
+├── tsconfig.json
+├── vite.config.ts           # Multi-page input: index + tools/sprite-tool
+├── public/
+│   └── sprites/             # Served at /sprites/* (Vite convention)
+│       ├── sprites.json
+│       └── tier-NN-*.png
+├── src/
+│   ├── main.ts              # Wires layers together, starts the loop
+│   ├── core/                # Pure: imports nothing outward
+│   ├── store/
+│   ├── input/
+│   ├── animation/
+│   ├── renderer/
+│   └── assets/              # Sprite loading + drawSpriteAtCell
+├── tools/
+│   └── sprite-tool.html     # Imports src/assets/sprite-renderer.ts
+└── docs/
+```
+
+Tests are co-located as `*.test.ts` next to the code they
+cover, run via Vitest. The acceptance scenarios in
+`06-acceptance-tests.md` map to tests under `src/core/`.
+
+The "core imports nothing outward" rule (see "Code
+organisation") is enforced with an ESLint
+`no-restricted-imports` rule scoped to `src/core/**`. The lint
+configuration is added when the first core module lands — until
+then there is nothing to constrain.
+
 ## Logic and animation sequencing
 
 When the player presses the down arrow, the entire consequence
@@ -68,41 +107,52 @@ the cell-by-cell timing belongs to the animation, not the
 state. The exact step shape is deferred until the animation
 layer is built.
 
+## Rendering surface
+
+The playfield and its particles render to a single **Canvas 2D**
+context. The chrome (parchment sidebar, vine borders, painted
+mountain backdrop) is HTML/CSS, since it doesn't need pixel-level
+control and reflows naturally with the layout.
+
+### Resizing
+
+The playfield aspect ratio is fixed (7×7 grid plus a sidebar).
+On window resize:
+
+1. Measure the available viewport.
+2. Compute the largest `cell_size_px` that fits, capped at the
+   PNG-native sprite resolution so we never upscale and blur.
+3. Set the canvas bitmap to `cssSize × devicePixelRatio` and the
+   CSS size to the layout size, then `ctx.scale(dpr, dpr)` so
+   draw calls stay in CSS pixels. This keeps rendering crisp on
+   HiDPI screens.
+4. Redraw. The redraw is cheap — 49 cells plus particles — so we
+   don't need incremental updates.
+
+`drawSpriteAtCell` already takes `cell_size_px` as a parameter,
+so the resize path reduces to "recompute the cell size and
+redraw."
+
 ## Sprites
 
-For the initial implementation, sprites are drawn
-**programmatically** — either as inline SVG or as canvas draw
-calls, depending on the rendering surface — so that logic and
-animations can land without waiting on illustration work. The
-result will not fully match the spec's "hand-drawn cartoon"
-target; it is a placeholder that we can iterate on.
+The twelve element sprites and the two special items are
+**PNGs** with transparent backgrounds, authored in the
+hand-drawn cartoon style described in `04-visual-style.md`.
+They live in `sprites/` alongside a `sprites.json` metadata
+file that maps each PNG into a grid cell (cell-footprint size,
+anchor, sub-cell offset). See `07-sprite-metadata-and-tooling.md`
+for the schema and the authoring tool. The shared rendering
+function lives in `src/sprite-renderer.js` and draws into a
+Canvas 2D context.
 
 Particles (the sparkles in the merge animation, the smoke puff
-after the dynamite blast) are drawn programmatically regardless
-of what we do for the element sprites.
+after the dynamite blast) are drawn programmatically.
 
 ## Open questions
 
-- **Sprite production for the final art.** Programmatic drawing
-  is the placeholder. The two realistic candidates for finals
-  are AI-generated raster sprites and refined programmatic
-  vector art. We'll experiment with both before committing.
-- **Rendering surface.** Canvas 2D, SVG, or DOM elements per
-  cell. The choice interacts with the sprite question (vector
-  sprites compose naturally with SVG; raster with canvas) and
-  with particle work (canvas is the easier path for many small
-  drifting points). Defer until we've prototyped.
 - **Step shape and granularity for the animation timeline.** To
   be designed when the animation layer is built.
 - **RNG and determinism.** The spec mandates a single seedable
   RNG instance for all gameplay-affecting rolls, exposed for
   tests (see `03-spawning.md`). The concrete library or
   implementation is not yet chosen.
-- **On-disk project structure.** A concrete directory layout
-  (e.g. `src/core/`, `src/store/`, `src/input/`, …) mirroring
-  the layers in "Code organisation". To be decided alongside
-  the first scaffolding commit.
-- **Module dependency rule.** Core imports nothing from any
-  other layer; the dependency graph points outward from core.
-  Whether this is enforced by lint configuration or only by
-  convention is not yet decided.

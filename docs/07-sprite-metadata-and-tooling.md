@@ -244,7 +244,7 @@ either:
 The expected layout in the project:
 
 ```
-assets/
+public/
   sprites/
     sprites.json
     tier-01-green-potion.png
@@ -254,6 +254,11 @@ assets/
     special-dynamite.png
     special-detonator.png
 ```
+
+The `public/` directory is Vite's convention for static assets that
+should be served as-is at the site root, so a sprite at
+`public/sprites/tier-01-green-potion.png` is reachable in the browser
+at the URL `/sprites/tier-01-green-potion.png`.
 
 `sprites.json` keys correspond to logical sprite names. The game
 maps tiers to sprite names via a small lookup table — this layer

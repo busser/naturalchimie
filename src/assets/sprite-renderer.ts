@@ -2,13 +2,15 @@
 // Imported by both the runtime game and the sprite authoring tool.
 // See docs/07-sprite-metadata-and-tooling.md for the full contract.
 
-/**
- * @typedef {Object} SpriteAsset
- * @property {[number, number]} anchor  - [x, y] in source pixels: bottom-center of cell-footprint
- * @property {number} cell_width_px     - width in source pixels of the cell-footprint rectangle
- * @property {number} cell_height_px    - height in source pixels of the cell-footprint rectangle
- * @property {CanvasImageSource} image  - the loaded source image
- */
+export interface SpriteAsset {
+  /** [x, y] in source pixels: bottom-center of cell-footprint */
+  anchor: [number, number];
+  /** width in source pixels of the cell-footprint rectangle */
+  cell_width_px: number;
+  /** height in source pixels of the cell-footprint rectangle */
+  cell_height_px: number;
+  image: HTMLImageElement;
+}
 
 /**
  * Draw a sprite into a cell.
@@ -17,14 +19,14 @@
  * The cell-footprint rectangle defines the scale and the anchor only,
  * so extruding parts (potion necks, apple stems) render outside the cell
  * naturally, scaled consistently with the main body.
- *
- * @param {CanvasRenderingContext2D} ctx
- * @param {SpriteAsset} sprite
- * @param {number} cell_screen_x  - left edge of cell on screen
- * @param {number} cell_screen_y  - top edge of cell on screen
- * @param {number} cell_size_px   - on-screen size of one cell
  */
-export function drawSpriteAtCell(ctx, sprite, cell_screen_x, cell_screen_y, cell_size_px) {
+export function drawSpriteAtCell(
+  ctx: CanvasRenderingContext2D,
+  sprite: SpriteAsset,
+  cell_screen_x: number,
+  cell_screen_y: number,
+  cell_size_px: number,
+): void {
   const scale_x = cell_size_px / sprite.cell_width_px;
   const scale_y = cell_size_px / sprite.cell_height_px;
 

@@ -180,7 +180,7 @@
   </div>
 
   <div id="drop-zone" hidden>
-    Drag the <code>sprites/</code> folder here to load it.<br>
+    Drag the <code>public/sprites/</code> folder here to load it.<br>
     <span class="hint">(File System Access API is unavailable in this browser; saves will be manual.)</span>
   </div>
 
@@ -223,7 +223,7 @@
 
       <section class="panel" id="fallback-panel" hidden>
         <h2>sprites.json (manual save)</h2>
-        <p class="hint">File System Access API unavailable; copy this JSON into <code>sprites/sprites.json</code> manually.</p>
+        <p class="hint">File System Access API unavailable; copy this JSON into <code>public/sprites/sprites.json</code> manually.</p>
         <textarea id="json-output" readonly></textarea>
         <p><button id="copy-json" type="button">Copy to clipboard</button></p>
       </section>
@@ -231,7 +231,7 @@
   </div>
 
   <script type="module">
-    import { drawSpriteAtCell } from '../src/sprite-renderer.js';
+    import { drawSpriteAtCell } from '../src/assets/sprite-renderer.ts';
 
     const $ = (id) => document.getElementById(id);
 
