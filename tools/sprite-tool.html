@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sprite Metadata Tool</title>
+  <style>
+    :root {
+      --border: #c8c0a8;
+      --bg: #f7f3e8;
+      --panel: #fdfaf0;
+      --text: #2a2418;
+      --accent: #8a6d2b;
+      --warn-bg: #ffe9b3;
+      --warn-fg: #5a3a00;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    header h1 {
+      font-size: 14px;
+      margin: 0;
+      font-weight: 600;
+    }
+    header button {
+      padding: 5px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    #folder-path {
+      font-family: ui-monospace, Menlo, monospace;
+      color: var(--accent);
+      font-size: 12px;
+    }
+    #file-protocol-warning {
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+      padding: 8px 16px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    #drop-zone {
+      margin: 16px;
+      padding: 32px;
+      border: 2px dashed var(--border);
+      text-align: center;
+      color: #888;
+      background: var(--panel);
+    }
+    #drop-zone.dragover { background: #efe7d0; color: var(--text); }
+
+    #layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 12px;
+      padding: 12px;
+      align-items: start;
+    }
+    #sprite-list-panel {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+    }
+    #sprite-list {
+      list-style: none;
+      margin: 0;
+      padding: 4px 0;
+    }
+    #sprite-list li {
+      padding: 4px 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 12px;
+    }
+    #sprite-list li:hover { background: #efe7d0; }
+    #sprite-list li.selected { background: #e0d3a4; }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      flex: 0 0 auto;
+    }
+    .dot.filled { background: var(--accent); }
+
+    #right { display: flex; flex-direction: column; gap: 12px; }
+    section.panel {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 10px;
+    }
+    section h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 0 0 8px;
+      color: var(--accent);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .toolbar label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+
+    #source-canvas {
+      display: block;
+      max-width: 100%;
+      background: #fff;
+      cursor: crosshair;
+    }
+
+    #metadata-fields {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    #metadata-fields label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+    #metadata-fields input {
+      font: inherit;
+      padding: 4px 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      width: 100%;
+    }
+
+    #preview-canvas {
+      display: block;
+      background: #cce6f7;
+      image-rendering: auto;
+    }
+
+    #fallback-panel textarea {
+      width: 100%;
+      height: 200px;
+      font: 11px/1.4 ui-monospace, Menlo, monospace;
+      border: 1px solid var(--border);
+      padding: 6px;
+      background: #fff;
+    }
+    #fallback-panel button { padding: 5px 12px; font: inherit; cursor: pointer; }
+
+    .hint { color: #888; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sprite Metadata Tool</h1>
+    <button id="open-folder" type="button">Open sprites folder…</button>
+    <span id="folder-path"></span>
+  </header>
+  <div id="file-protocol-warning" hidden>
+    Loaded via <code>file://</code>. ES modules and the File System Access API
+    will not work. Serve the project root over HTTP, e.g.
+    <code>python3 -m http.server</code>, then open
+    <code>http://localhost:8000/tools/sprite-tool.html</code>.
+  </div>
+
+  <div id="drop-zone" hidden>
+    Drag the <code>sprites/</code> folder here to load it.<br>
+    <span class="hint">(File System Access API is unavailable in this browser; saves will be manual.)</span>
+  </div>
+
+  <div id="layout">
+    <aside id="sprite-list-panel">
+      <ul id="sprite-list"></ul>
+    </aside>
+
+    <div id="right">
+      <section class="panel" id="source-panel">
+        <h2>Source image</h2>
+        <div class="toolbar">
+          <label><input type="checkbox" id="show-bounds" checked> Image bounds</label>
+          <label><input type="checkbox" id="show-anchor" checked> Anchor</label>
+          <label><input type="checkbox" id="show-rect" checked> Cell rectangle</label>
+          <span class="hint">Click image to set anchor • drag corner handles to resize cell</span>
+        </div>
+        <canvas id="source-canvas" width="640" height="480"></canvas>
+      </section>
+
+      <section class="panel">
+        <h2>Metadata</h2>
+        <div id="metadata-fields">
+          <label>anchor.x <input type="number" id="anchor-x" min="0" step="1"></label>
+          <label>anchor.y <input type="number" id="anchor-y" min="0" step="1"></label>
+          <label>cell_width_px <input type="number" id="cell-w" min="1" step="1"></label>
+          <label>cell_height_px <input type="number" id="cell-h" min="1" step="1"></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Preview</h2>
+        <div class="toolbar">
+          <label><input type="checkbox" id="two-sprite-mode"> Two-sprite mode</label>
+          <select id="second-sprite"></select>
+          <span class="hint">3×3 preview at 96 px/cell</span>
+        </div>
+        <canvas id="preview-canvas" width="288" height="288"></canvas>
+      </section>
+
+      <section class="panel" id="fallback-panel" hidden>
+        <h2>sprites.json (manual save)</h2>
+        <p class="hint">File System Access API unavailable; copy this JSON into <code>sprites/sprites.json</code> manually.</p>
+        <textarea id="json-output" readonly></textarea>
+        <p><button id="copy-json" type="button">Copy to clipboard</button></p>
+      </section>
+    </div>
+  </div>
+
+  <script type="module">
+    import { drawSpriteAtCell } from '../src/sprite-renderer.js';
+
+    const $ = (id) => document.getElementById(id);
+
+    const SOURCE_VIEW_MAX_W = 640;
+    const SOURCE_VIEW_MAX_H = 720;
+    const PREVIEW_CELL_PX = 96;
+    const PREVIEW_GRID = 3;
+    const HANDLE_RADIUS_PX = 7;
+
+    const state = {
+      dirHandle: null,
+      jsonHandle: null,
+      sprites: {},        // name -> { fileName, image }
+      metadata: {},       // name -> { file, anchor, cell_width_px, cell_height_px }
+      authored: new Set(),// names that already had an entry in sprites.json on load (or have been touched)
+      selected: null,
+      secondSprite: null,
+      twoSpriteMode: false,
+      showBounds: true,
+      showAnchor: true,
+      showRect: true,
+      drag: null,
+      viewScale: 1,
+      saveTimer: null,
+      canFSA: 'showDirectoryPicker' in window,
+    };
+
+    const sourceCanvas = $('source-canvas');
+    const sourceCtx = sourceCanvas.getContext('2d');
+    const previewCanvas = $('preview-canvas');
+    const previewCtx = previewCanvas.getContext('2d');
+
+    init();
+
+    function init() {
+      if (location.protocol === 'file:') {
+        $('file-protocol-warning').hidden = false;
+      }
+      if (!state.canFSA) {
+        $('open-folder').textContent = 'Open sprites folder (drag-and-drop)…';
+        $('drop-zone').hidden = false;
+        $('fallback-panel').hidden = false;
+        setupDragDrop();
+      }
+
+      $('open-folder').addEventListener('click', openFolder);
+
+      $('show-bounds').addEventListener('change', (e) => { state.showBounds = e.target.checked; redrawSource(); });
+      $('show-anchor').addEventListener('change', (e) => { state.showAnchor = e.target.checked; redrawSource(); });
+      $('show-rect').addEventListener('change', (e) => { state.showRect = e.target.checked; redrawSource(); });
+
+      for (const id of ['anchor-x', 'anchor-y', 'cell-w', 'cell-h']) {
+        $(id).addEventListener('input', onFieldInput);
+      }
+
+      $('two-sprite-mode').addEventListener('change', (e) => {
+        state.twoSpriteMode = e.target.checked;
+        redrawPreview();
+      });
+      $('second-sprite').addEventListener('change', (e) => {
+        state.secondSprite = e.target.value || null;
+        redrawPreview();
+      });
+
+      sourceCanvas.addEventListener('mousedown', onSourceMouseDown);
+      window.addEventListener('mousemove', onSourceMouseMove);
+      window.addEventListener('mouseup', () => { state.drag = null; });
+
+      $('copy-json').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText($('json-output').value);
+          $('copy-json').textContent = 'Copied!';
+          setTimeout(() => { $('copy-json').textContent = 'Copy to clipboard'; }, 1500);
+        } catch (e) {
+          alert('Clipboard write failed: ' + e.message);
+        }
+      });
+    }
+
+    // ---------- Folder loading ----------
+
+    async function openFolder() {
+      if (state.canFSA) {
+        try {
+          state.dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        } catch (e) {
+          return; // user cancelled
+        }
+        $('folder-path').textContent = state.dirHandle.name + '/';
+        await loadFromDirHandle();
+      }
+    }
+
+    async function loadFromDirHandle() {
+      state.sprites = {};
+      state.metadata = {};
+      state.authored = new Set();
+      state.jsonHandle = null;
+
+      let jsonText = null;
+      const pngHandles = {};
+      for await (const [name, handle] of state.dirHandle.entries()) {
+        if (handle.kind !== 'file') continue;
+        if (name === 'sprites.json') {
+          state.jsonHandle = handle;
+          jsonText = await (await handle.getFile()).text();
+        } else if (name.toLowerCase().endsWith('.png')) {
+          pngHandles[name] = handle;
+        }
+      }
+
+      if (jsonText) {
+        try {
+          state.metadata = JSON.parse(jsonText);
+          for (const k of Object.keys(state.metadata)) state.authored.add(k);
+        } catch (e) {
+          alert('sprites.json is malformed: ' + e.message);
+          state.metadata = {};
+        }
+      }
+
+      for (const fileName of Object.keys(pngHandles)) {
+        const spriteName = fileName.replace(/\.png$/i, '');
+        const file = await pngHandles[fileName].getFile();
+        const img = await loadImageFromBlob(file);
+        state.sprites[spriteName] = { fileName, image: img };
+        if (!state.metadata[spriteName]) {
+          state.metadata[spriteName] = defaultMetadata(fileName, img);
+        }
+      }
+
+      finishLoad();
+    }
+
+    function setupDragDrop() {
+      const dz = $('drop-zone');
+      dz.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dz.classList.add('dragover');
+      });
+      dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+      dz.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dz.classList.remove('dragover');
+        const item = e.dataTransfer.items[0];
+        const entry = item && item.webkitGetAsEntry && item.webkitGetAsEntry();
+        if (!entry || !entry.isDirectory) {
+          alert('Drop a folder, not a single file.');
+          return;
+        }
+        $('folder-path').textContent = entry.name + '/';
+        await loadFromDirEntry(entry);
+      });
+    }
+
+    async function loadFromDirEntry(dirEntry) {
+      state.sprites = {};
+      state.metadata = {};
+      state.authored = new Set();
+
+      const entries = await new Promise((res) => dirEntry.createReader().readEntries(res));
+      let jsonText = null;
+      const pngEntries = [];
+      for (const entry of entries) {
+        if (!entry.isFile) continue;
+        if (entry.name === 'sprites.json') {
+          const f = await new Promise((res) => entry.file(res));
+          jsonText = await f.text();
+        } else if (entry.name.toLowerCase().endsWith('.png')) {
+          pngEntries.push(entry);
+        }
+      }
+
+      if (jsonText) {
+        try {
+          state.metadata = JSON.parse(jsonText);
+          for (const k of Object.keys(state.metadata)) state.authored.add(k);
+        } catch (e) {
+          alert('sprites.json is malformed: ' + e.message);
+          state.metadata = {};
+        }
+      }
+
+      for (const entry of pngEntries) {
+        const fileName = entry.name;
+        const spriteName = fileName.replace(/\.png$/i, '');
+        const file = await new Promise((res) => entry.file(res));
+        const img = await loadImageFromBlob(file);
+        state.sprites[spriteName] = { fileName, image: img };
+        if (!state.metadata[spriteName]) {
+          state.metadata[spriteName] = defaultMetadata(fileName, img);
+        }
+      }
+
+      finishLoad();
+    }
+
+    function loadImageFromBlob(blob) {
+      const url = URL.createObjectURL(blob);
+      return new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = rej;
+        img.src = url;
+      });
+    }
+
+    function defaultMetadata(fileName, img) {
+      return {
+        file: fileName,
+        anchor: [Math.round(img.width / 2), img.height],
+        cell_width_px: img.width,
+        cell_height_px: img.height,
+      };
+    }
+
+    function finishLoad() {
+      $('drop-zone').hidden = state.canFSA ? true : Object.keys(state.sprites).length === 0;
+      renderSpriteList();
+      const names = Object.keys(state.sprites).sort();
+      if (names.length > 0) {
+        state.secondSprite = names[0];
+        selectSprite(names[0]);
+      }
+      updateJSONOutput();
+    }
+
+    // ---------- UI rendering ----------
+
+    function renderSpriteList() {
+      const ul = $('sprite-list');
+      ul.innerHTML = '';
+      for (const name of Object.keys(state.sprites).sort()) {
+        const li = document.createElement('li');
+        li.dataset.name = name;
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        if (state.authored.has(name)) dot.classList.add('filled');
+        li.appendChild(dot);
+        li.appendChild(document.createTextNode(name));
+        li.addEventListener('click', () => selectSprite(name));
+        ul.appendChild(li);
+      }
+
+      const sel = $('second-sprite');
+      const prev = sel.value;
+      sel.innerHTML = '';
+      for (const name of Object.keys(state.sprites).sort()) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      }
+      if (prev && state.sprites[prev]) {
+        sel.value = prev;
+      } else if (sel.options.length > 0) {
+        sel.value = sel.options[0].value;
+        state.secondSprite = sel.value;
+      }
+    }
+
+    function selectSprite(name) {
+      state.selected = name;
+      $('sprite-list').querySelectorAll('li').forEach((li) => {
+        li.classList.toggle('selected', li.dataset.name === name);
+      });
+      syncFieldsFromMetadata();
+      redrawSource();
+      redrawPreview();
+    }
+
+    function syncFieldsFromMetadata() {
+      const md = state.metadata[state.selected];
+      if (!md) return;
+      $('anchor-x').value = md.anchor[0];
+      $('anchor-y').value = md.anchor[1];
+      $('cell-w').value = md.cell_width_px;
+      $('cell-h').value = md.cell_height_px;
+    }
+
+    function onFieldInput() {
+      const md = state.metadata[state.selected];
+      if (!md) return;
+      const ax = clamp(parseInt($('anchor-x').value, 10), 0, 1e9);
+      const ay = clamp(parseInt($('anchor-y').value, 10), 0, 1e9);
+      const cw = clamp(parseInt($('cell-w').value, 10), 1, 1e9);
+      const ch = clamp(parseInt($('cell-h').value, 10), 1, 1e9);
+      if ([ax, ay, cw, ch].some(Number.isNaN)) return;
+      md.anchor[0] = ax;
+      md.anchor[1] = ay;
+      md.cell_width_px = cw;
+      md.cell_height_px = ch;
+      markAuthored(state.selected);
+      redrawSource();
+      redrawPreview();
+      scheduleSave();
+    }
+
+    function clamp(n, lo, hi) {
+      return Math.max(lo, Math.min(hi, n));
+    }
+
+    function markAuthored(name) {
+      if (!state.authored.has(name)) {
+        state.authored.add(name);
+        const li = $('sprite-list').querySelector(`li[data-name="${CSS.escape(name)}"]`);
+        if (li) li.querySelector('.dot').classList.add('filled');
+      }
+    }
+
+    // ---------- Source canvas drawing ----------
+
+    function redrawSource() {
+      if (!state.selected) {
+        sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+        return;
+      }
+      const sprite = state.sprites[state.selected];
+      const img = sprite && sprite.image;
+      if (!img) return;
+
+      const scale = Math.min(SOURCE_VIEW_MAX_W / img.width, SOURCE_VIEW_MAX_H / img.height, 1);
+      state.viewScale = scale;
+      const dispW = Math.max(1, Math.round(img.width * scale));
+      const dispH = Math.max(1, Math.round(img.height * scale));
+      sourceCanvas.width = dispW;
+      sourceCanvas.height = dispH;
+
+      drawChecker(sourceCtx, dispW, dispH);
+      sourceCtx.drawImage(img, 0, 0, dispW, dispH);
+
+      const md = state.metadata[state.selected];
+      const ax = md.anchor[0] * scale;
+      const ay = md.anchor[1] * scale;
+      const cw = md.cell_width_px * scale;
+      const ch = md.cell_height_px * scale;
+      const left = ax - cw / 2;
+      const top = ay - ch;
+
+      if (state.showBounds) {
+        sourceCtx.strokeStyle = 'rgba(0,0,0,0.5)';
+        sourceCtx.lineWidth = 1;
+        sourceCtx.strokeRect(0.5, 0.5, dispW - 1, dispH - 1);
+      }
+
+      if (state.showRect) {
+        sourceCtx.fillStyle = 'rgba(255, 215, 0, 0.22)';
+        sourceCtx.fillRect(left, top, cw, ch);
+        sourceCtx.strokeStyle = 'rgba(170, 130, 0, 0.95)';
+        sourceCtx.lineWidth = 1.5;
+        sourceCtx.strokeRect(left, top, cw, ch);
+        drawHandle(sourceCtx, left, top);
+        drawHandle(sourceCtx, left + cw, top);
+        drawHandle(sourceCtx, left, top + ch);
+        drawHandle(sourceCtx, left + cw, top + ch);
+      }
+
+      if (state.showAnchor) {
+        drawCrosshair(sourceCtx, ax, ay);
+      }
+    }
+
+    function drawChecker(ctx, w, h) {
+      const size = 10;
+      for (let y = 0; y < h; y += size) {
+        for (let x = 0; x < w; x += size) {
+          const odd = ((Math.floor(x / size) + Math.floor(y / size)) & 1) === 1;
+          ctx.fillStyle = odd ? '#dcdcdc' : '#ffffff';
+          ctx.fillRect(x, y, size, size);
+        }
+      }
+    }
+
+    function drawCrosshair(ctx, x, y) {
+      const w = ctx.canvas.width;
+      const h = ctx.canvas.height;
+
+      // Full-canvas guide lines through the anchor, dashed and subtle so they
+      // don't obscure the sprite but make it easy to eyeball alignment.
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.moveTo(0, y); ctx.lineTo(w, y);
+      ctx.moveTo(x, 0); ctx.lineTo(x, h);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(232, 0, 0, 0.85)';
+      ctx.beginPath();
+      ctx.moveTo(0, y); ctx.lineTo(w, y);
+      ctx.moveTo(x, 0); ctx.lineTo(x, h);
+      ctx.stroke();
+      ctx.restore();
+
+      // Solid local crosshair at the anchor for precise targeting.
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(x - 12, y); ctx.lineTo(x + 12, y);
+      ctx.moveTo(x, y - 12); ctx.lineTo(x, y + 12);
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#e80000';
+      ctx.beginPath();
+      ctx.moveTo(x - 12, y); ctx.lineTo(x + 12, y);
+      ctx.moveTo(x, y - 12); ctx.lineTo(x, y + 12);
+      ctx.stroke();
+    }
+
+    function drawHandle(ctx, x, y) {
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, HANDLE_RADIUS_PX, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // ---------- Source canvas interaction ----------
+
+    function getCanvasCoords(canvas, evt) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (evt.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (evt.clientY - rect.top) * (canvas.height / rect.height);
+      return { x, y };
+    }
+
+    function getCornerHit(cx, cy) {
+      if (!state.selected) return null;
+      const md = state.metadata[state.selected];
+      const scale = state.viewScale;
+      const ax = md.anchor[0] * scale;
+      const ay = md.anchor[1] * scale;
+      const cw = md.cell_width_px * scale;
+      const ch = md.cell_height_px * scale;
+      const corners = [
+        { name: 'tl', x: ax - cw / 2, y: ay - ch },
+        { name: 'tr', x: ax + cw / 2, y: ay - ch },
+        { name: 'bl', x: ax - cw / 2, y: ay },
+        { name: 'br', x: ax + cw / 2, y: ay },
+      ];
+      const r = HANDLE_RADIUS_PX + 4;
+      for (const c of corners) {
+        const dx = c.x - cx, dy = c.y - cy;
+        if (dx * dx + dy * dy <= r * r) return c.name;
+      }
+      return null;
+    }
+
+    function onSourceMouseDown(evt) {
+      if (!state.selected) return;
+      const { x, y } = getCanvasCoords(sourceCanvas, evt);
+      const corner = state.showRect ? getCornerHit(x, y) : null;
+      if (corner) {
+        state.drag = { kind: 'corner', corner };
+      } else {
+        state.drag = { kind: 'anchor' };
+        applyAnchorAt(x, y);
+      }
+    }
+
+    function onSourceMouseMove(evt) {
+      if (!state.drag || !state.selected) return;
+      const { x, y } = getCanvasCoords(sourceCanvas, evt);
+      if (state.drag.kind === 'anchor') {
+        applyAnchorAt(x, y);
+      } else if (state.drag.kind === 'corner') {
+        applyCornerDragAt(x, y);
+      }
+    }
+
+    function applyAnchorAt(canvasX, canvasY) {
+      const md = state.metadata[state.selected];
+      md.anchor[0] = clamp(Math.round(canvasX / state.viewScale), 0, 1e9);
+      md.anchor[1] = clamp(Math.round(canvasY / state.viewScale), 0, 1e9);
+      markAuthored(state.selected);
+      syncFieldsFromMetadata();
+      redrawSource();
+      redrawPreview();
+      scheduleSave();
+    }
+
+    function applyCornerDragAt(canvasX, canvasY) {
+      const md = state.metadata[state.selected];
+      const ix = canvasX / state.viewScale;
+      const iy = canvasY / state.viewScale;
+      const newWidth = Math.max(2, Math.round(2 * Math.abs(ix - md.anchor[0])));
+      md.cell_width_px = newWidth;
+      // Top corners adjust height too; bottom corners only adjust width.
+      if (state.drag.corner === 'tl' || state.drag.corner === 'tr') {
+        md.cell_height_px = Math.max(2, Math.round(md.anchor[1] - iy));
+      }
+      markAuthored(state.selected);
+      syncFieldsFromMetadata();
+      redrawSource();
+      redrawPreview();
+      scheduleSave();
+    }
+
+    // ---------- Preview ----------
+
+    function redrawPreview() {
+      const total = PREVIEW_CELL_PX * PREVIEW_GRID;
+      previewCanvas.width = total;
+      previewCanvas.height = total;
+
+      previewCtx.fillStyle = '#cce6f7';
+      previewCtx.fillRect(0, 0, total, total);
+
+      const primary = state.selected ? state.sprites[state.selected] : null;
+      const second = state.twoSpriteMode && state.secondSprite ? state.sprites[state.secondSprite] : null;
+      const primaryAsset = primary && primary.image ? assetFor(state.selected, primary.image) : null;
+      const secondAsset = second && second.image ? assetFor(state.secondSprite, second.image) : null;
+
+      // Lower-row sprites render in front; we draw rows top-to-bottom.
+      // In two-sprite mode, the selected sprite is in the bottom row.
+      if (primaryAsset) {
+        for (let r = 0; r < PREVIEW_GRID; r++) {
+          for (let c = 0; c < PREVIEW_GRID; c++) {
+            const useSecondary = state.twoSpriteMode && secondAsset && r < PREVIEW_GRID - 1;
+            const asset = useSecondary ? secondAsset : primaryAsset;
+            drawSpriteAtCell(previewCtx, asset, c * PREVIEW_CELL_PX, r * PREVIEW_CELL_PX, PREVIEW_CELL_PX);
+          }
+        }
+      }
+
+      // Cell boundary lines (drawn last, faint)
+      previewCtx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+      previewCtx.lineWidth = 1;
+      for (let i = 0; i <= PREVIEW_GRID; i++) {
+        const p = i * PREVIEW_CELL_PX + 0.5;
+        previewCtx.beginPath();
+        previewCtx.moveTo(p, 0); previewCtx.lineTo(p, total);
+        previewCtx.moveTo(0, p); previewCtx.lineTo(total, p);
+        previewCtx.stroke();
+      }
+    }
+
+    function assetFor(name, image) {
+      const md = state.metadata[name];
+      return {
+        anchor: md.anchor,
+        cell_width_px: md.cell_width_px,
+        cell_height_px: md.cell_height_px,
+        image,
+      };
+    }
+
+    // ---------- Persistence ----------
+
+    function scheduleSave() {
+      updateJSONOutput();
+      clearTimeout(state.saveTimer);
+      state.saveTimer = setTimeout(saveJSON, 200);
+    }
+
+    function updateJSONOutput() {
+      $('json-output').value = JSON.stringify(state.metadata, null, 2) + '\n';
+    }
+
+    async function saveJSON() {
+      if (!state.dirHandle) return; // drag-and-drop fallback: user copies from textarea
+      const text = JSON.stringify(state.metadata, null, 2) + '\n';
+      try {
+        if (!state.jsonHandle) {
+          state.jsonHandle = await state.dirHandle.getFileHandle('sprites.json', { create: true });
+        }
+        if (state.jsonHandle.requestPermission) {
+          const perm = await state.jsonHandle.requestPermission({ mode: 'readwrite' });
+          if (perm !== 'granted') {
+            console.warn('Write permission denied for sprites.json');
+            return;
+          }
+        }
+        const writable = await state.jsonHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+      } catch (e) {
+        console.error('Failed to save sprites.json:', e);
+      }
+    }
+  </script>
+</body>
+</html>
