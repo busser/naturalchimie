@@ -124,59 +124,5 @@
     ],
     "cell_width_px": 600,
     "cell_height_px": 600
-  },
-  "tier-06-chocapic.bkp": {
-    "file": "tier-06-chocapic.bkp.png",
-    "anchor": [
-      627,
-      1254
-    ],
-    "cell_width_px": 1254,
-    "cell_height_px": 1254
-  },
-  "tier-09-bone.bkp": {
-    "file": "tier-09-bone.bkp.png",
-    "anchor": [
-      512,
-      1536
-    ],
-    "cell_width_px": 1024,
-    "cell_height_px": 1536
-  },
-  "tier-09-bone.bkp.2": {
-    "file": "tier-09-bone.bkp.2.png",
-    "anchor": [
-      512,
-      1536
-    ],
-    "cell_width_px": 1024,
-    "cell_height_px": 1536
-  },
-  "tier-09-bone.bkp.3": {
-    "file": "tier-09-bone.bkp.3.png",
-    "anchor": [
-      512,
-      1536
-    ],
-    "cell_width_px": 1024,
-    "cell_height_px": 1536
-  },
-  "tier-09-bone.bkp.4": {
-    "file": "tier-09-bone.bkp.4.png",
-    "anchor": [
-      627,
-      1254
-    ],
-    "cell_width_px": 1254,
-    "cell_height_px": 1254
-  },
-  "tier-11-ore.bkp": {
-    "file": "tier-11-ore.bkp.png",
-    "anchor": [
-      627,
-      1254
-    ],
-    "cell_width_px": 1254,
-    "cell_height_px": 1254
   }
 }
