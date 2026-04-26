@@ -1,0 +1,86 @@
+{
+  "tier-01-green-potion": {
+    "file": "tier-01-green-potion.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-02-yellow-potion": {
+    "file": "tier-02-yellow-potion.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-03-orange-potion": {
+    "file": "tier-03-orange-potion.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-04-purple-potion": {
+    "file": "tier-04-purple-potion.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-05-wheat": {
+    "file": "tier-05-wheat.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-06-chocapic": {
+    "file": "tier-06-chocapic.png",
+    "anchor": [627, 1254],
+    "cell_width_px": 1254,
+    "cell_height_px": 1254
+  },
+  "tier-07-apple": {
+    "file": "tier-07-apple.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-08-eyeball": {
+    "file": "tier-08-eyeball.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-09-bone": {
+    "file": "tier-09-bone.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-10-gemstone": {
+    "file": "tier-10-gemstone.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "tier-11-ore": {
+    "file": "tier-11-ore.png",
+    "anchor": [627, 1254],
+    "cell_width_px": 1254,
+    "cell_height_px": 1254
+  },
+  "tier-12-gold": {
+    "file": "tier-12-gold.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "special-dynamite": {
+    "file": "special-dynamite.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  },
+  "special-detonator": {
+    "file": "special-detonator.png",
+    "anchor": [512, 1536],
+    "cell_width_px": 1024,
+    "cell_height_px": 1536
+  }
+}
