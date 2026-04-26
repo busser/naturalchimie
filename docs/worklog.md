@@ -3,6 +3,27 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-26 — Placed the active pair in core state
+
+Closed the active-pair open question in `08-software-design.md`:
+the pair lives in core state alongside the board, not as
+store-side presentation state. The unified core signature
+`(state, input, rng) → (state', steps, rng')` was already
+doing real work (every input produces a timeline covering its
+full consequences), and option B — threading the pair in as
+input — would have forked the signature per action just to
+keep the core "purely about the board." With option A, shift
+and rotate operate on `state.activePair`; drop consumes it
+into board cells; cascades run on the board alone; "no pair
+right now" (mid-cascade, post-game-over) is an honest core
+state rather than implicit store coordination. Updated the
+Store bullet, added a clarifying paragraph under "Logic and
+animation sequencing," and changed the snapshot wording from
+"of the board" to "of the game position." Also captured four
+more open questions surfaced during the discussion: animation
+layer API, concrete state shape, layer wiring in `main.ts`,
+and game-over UX.
+
 ## 2026-04-26 — Settled coordinates and the spawn-pool model
 
 Closed two more open questions in `08-software-design.md`.

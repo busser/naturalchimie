@@ -27,10 +27,10 @@ order from purest to most side-effecting:
   the store. Exhaustively unit-tested via the scenarios in
   `06-acceptance-tests.md`.
 - **Store** — holds the current core state plus
-  presentation-only state (active-pair position, pending
-  animation timeline, RNG instance, game-over flag). Receives
-  input actions, calls into core, exposes a subscribe interface
-  for the renderer.
+  presentation-only state (pending animation timeline, RNG
+  instance, game-over flag). The active pair is part of core
+  state, not the store. Receives input actions, calls into
+  core, exposes a subscribe interface for the renderer.
 - **Input** — keyboard handler that translates key events into
   store actions. Buffering and held-key behavior are described
   in "Input handling" below.
@@ -95,6 +95,13 @@ that triggers a long cascade yields many. The core stays
 completely time-free, and acceptance tests assert against the
 returned state and step list directly.
 
+State here is the full game position: the 7×7 board plus the
+active pair (or its absence — between cascades and after game
+over there is no pair). Shift and rotate inputs operate on
+`state.activePair`; drop converts it into committed board cells
+and the ensuing cascade operates on the board alone. The store
+mirrors this state but does not own any part of it.
+
 ### Step shape
 
 A "step" is one unit of state transition with a self-contained
@@ -105,7 +112,8 @@ animation. Each step carries:
 - a **payload** describing the event (which cells merged into
   which target cell, how far each column fell, where the
   dynamite landed, …),
-- the **post-step snapshot** of the board.
+- the **post-step snapshot** of the game position (board and
+  active pair).
 
 The kind and payload tell the animation layer what visual to
 play. The snapshot tells the store and renderer what is
@@ -132,7 +140,7 @@ simultaneously as one step rather than serialised into two.
 ### Playback
 
 The store holds a `currentSnapshot` (the latest committed
-board) and a queue of pending steps. Playback proceeds:
+game position) and a queue of pending steps. Playback proceeds:
 
 1. The animation layer reads the next step's kind and payload
    and plays the visual transition from `currentSnapshot` to
@@ -270,17 +278,26 @@ the rendering boundary.
 
 ## Open questions
 
-- **Active pair: in core state or store-only?** The "Code
-  organisation" section lists active-pair position as
-  presentation-only state in the store, but the core's
-  `(state, input, rng) → (state', steps, rng')` signature
-  applies to shift and rotate too — which means the core has to
-  know about the pair. The boundary needs to be drawn
-  explicitly: either the pair lives in core state and the store
-  mirrors a derived view, or the core takes the pair as part of
-  its input and threads it through.
 - **Game-over signal shape.** Overflow detection (a new pair
   cannot be placed) needs to surface somewhere. Options: a flag
   on the post-step snapshot, a terminal step kind
   (`"game-over"`), or both. Affects whether the animation and
   renderer layers need a special case or just read the snapshot.
+- **Animation layer API.** The step shape is settled, but how
+  the animation layer is driven isn't. Per-step promise vs. a
+  central `requestAnimationFrame` driver; tween library vs.
+  hand-rolled interpolation. Touches every step kind, so worth
+  deciding before the first step is implemented.
+- **Concrete state shape.** `Board`, `Pair`, the input type,
+  and the discriminated union of step kinds are described in
+  prose but not yet written as TypeScript. Pinning these down
+  forces a resolution to the active-pair question above.
+- **Layer wiring in `main.ts`.** How the input layer dispatches
+  to the store, how the store invokes core, and how the
+  animation queue is fed and drained. Currently only described
+  abstractly under "Logic and animation sequencing."
+- **Game-over UX.** The spec covers detection but not the
+  player-facing behavior on overflow: overlay, restart prompt,
+  score freeze, input lockout. Likely a spec gap (probably
+  belongs in `01-gameplay-rules.md` or `04-visual-style.md`)
+  rather than a design gap.
