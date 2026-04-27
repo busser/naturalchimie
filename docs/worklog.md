@@ -3,6 +3,28 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-27 — Built a board text DSL for tests
+
+The scenarios in `06-acceptance-tests.md` are written as 7- or
+9-row diagrams. Made that notation executable: added
+`parseBoard` and `formatBoard` in `src/core/board-text.ts`,
+matching the spec exactly so fixtures read like the spec. The
+parser flips top-down diagrams to bottom-indexed `Board`; the
+formatter is the inverse, emitting 7 rows by default and
+bumping to 9 only when the overflow zone holds anything. `D`
+(dynamite) is rejected — `Cell` doesn't model it, since
+dynamite is only ever an active piece.
+
+Followed with a Vitest custom matcher
+`expect(board).toMatchBoard("…")`, registered in
+`vitest.setup.ts` via `test.setupFiles`. On failure Vitest
+renders a line-level diff in spec notation with the source
+location pointing at the assertion. Originally parked as a
+follow-up on the theory that the helper form
+(`expect(formatBoard(a)).toBe(formatBoard(b))`) would suffice;
+closed it immediately once the diff was confirmed clean enough
+to skip the extra hop.
+
 ## 2026-04-27 — Closed the game-over open questions
 
 Picked the terminal-step shape for the game-over signal: when a

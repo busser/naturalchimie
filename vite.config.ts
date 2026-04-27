@@ -13,5 +13,6 @@ export default defineConfig({
   test: {
     // Core tests run in node; renderer/animation tests can opt into jsdom per-file.
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
   },
 });
