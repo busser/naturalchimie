@@ -339,6 +339,16 @@ the rest of the codebase:
   spec rotation rules ("the element that was on the right ends
   up on the top") preserve identity through rotation, which an
   unlabelled "two cells" representation would lose.
+- **`ActivePiece` stores only a column**, not a 2D position. The
+  active piece spawns at a fixed row and only ever shifts
+  horizontally or rotates in place; drop consumes it into the
+  board the same frame the player presses down. Spec
+  (`01-gameplay-rules.md`) rules out soft drop, gravity timer,
+  and any other mechanism that would move the piece vertically
+  while it is active. Threading a row through every shift and
+  rotate transition would be carrying a constant in disguise.
+  The spawn row lives in the rendering layer instead, alongside
+  the rest of the layout.
 
 Step events under `StepEvent` are stubbed with their `kind`
 discriminator only. Each event's payload is filled in alongside

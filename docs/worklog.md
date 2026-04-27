@@ -3,6 +3,23 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-27 — Stripped the row off the active piece
+
+`ActivePiece` was carrying a 2D `Pos` for its anchor, but the row
+never varied during the piece's lifetime: the spec pins spawn at a
+fixed row, rules out soft drop and gravity timers
+(`01-gameplay-rules.md:124-127`), and drop consumes the piece into
+the board the same frame the player presses down. Shift only moves
+horizontally; rotate flips orientation in place. The row was a
+constant in disguise being threaded through every transition.
+
+Replaced `anchor: Pos` with `column: number` on the pair, and the
+two solo variants likewise. `Pos` stays for board-cell references
+in step payloads. The spawn row becomes a rendering-layer constant
+alongside the rest of the layout. Captured the rationale in a new
+bullet under "State shape" in `08-software-design.md` so the choice
+isn't re-derived later.
+
 ## 2026-04-27 — Built a board text DSL for tests
 
 The scenarios in `06-acceptance-tests.md` are written as 7- or

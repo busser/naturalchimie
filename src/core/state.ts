@@ -23,10 +23,14 @@ export type Orientation = "horizontal" | "vertical";
 
 // What the player controls.
 //
-// For a pair, `anchor` is the lower-coordinate cell — the left cell when
-// horizontal, the bottom cell when vertical. `first` is the element at
-// the anchor; `second` is the other one. Rotation flips `orientation`
-// but preserves the first/second labels:
+// Only the column varies during an active piece's life: shift moves it
+// left/right, rotate flips orientation, drop consumes the piece into
+// the board. The row is fixed at the spawn row throughout — modelled
+// as a rendering-layer constant rather than threaded through every
+// transition. For a pair, `column` is the lower-column anchor (the
+// left cell when horizontal, the only column when vertical). `first`
+// is the element at that anchor; `second` is the other one. Rotation
+// flips `orientation` but preserves the first/second labels:
 //   horizontal left  ↔ vertical bottom  (= first)
 //   horizontal right ↔ vertical top     (= second)
 //
@@ -34,13 +38,13 @@ export type Orientation = "horizontal" | "vertical";
 export type ActivePiece =
   | {
       readonly kind: "pair";
-      readonly anchor: Pos;
+      readonly column: number;
       readonly orientation: Orientation;
       readonly first: Tier;
       readonly second: Tier;
     }
-  | { readonly kind: "dynamite"; readonly pos: Pos }
-  | { readonly kind: "detonator"; readonly pos: Pos };
+  | { readonly kind: "dynamite"; readonly column: number }
+  | { readonly kind: "detonator"; readonly column: number };
 
 // What spawn produces. No position — position is added when a piece
 // becomes active.
