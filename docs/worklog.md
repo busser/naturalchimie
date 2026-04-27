@@ -3,6 +3,28 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-04-27 — Implemented shift and rotate
+
+Landed `src/core/apply.ts` with the unified entry point
+`applyInput(state, input, rng) → [state', steps, rng']`. Shift
+moves the anchor column by ±1 and rejects when any half would
+leave columns 0–6 (= spec columns 1–7); rejection returns the
+input state and zero steps so the input layer just drains the
+buffer with no animation. Rotate flips orientation in place;
+H→V always succeeds (the spec guarantees it fits), V→H wall-kicks
+one column left when the right half would land past column 6.
+
+Tests cover each rule from `01-gameplay-rules.md` plus two
+non-obvious properties: rotation preserves first/second labels
+(so identity survives 4× rotation), and the V→H wall-kick is
+**sticky** — V at column 6 → H at column 5, rotating back gives
+V at column 5, not 6. The kick is a real displacement, not a
+transient nudge during the animation.
+
+Drop is stubbed with a throw inside the dispatch — it'll land
+alongside the cascade simulator. RNG passes through unchanged
+for both shift and rotate (neither draws random numbers).
+
 ## 2026-04-27 — Stripped the row off the active piece
 
 `ActivePiece` was carrying a 2D `Pos` for its anchor, but the row
