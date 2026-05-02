@@ -3,6 +3,48 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Implemented reactions, gravity, and cascades
+
+Until now elements just stacked. Dropping a piece landed it and
+that was that — no merges, no chain reactions, no way to ever
+reach tier 12. Added `src/core/cascade.ts` with a pure
+`runCascade(board, priorState) → { board, steps }` that loops
+react → gravity until the board is stable. Connected components
+of size ≥ 3 of any tier 1–11 react simultaneously into a single
+merge step (concurrent groups bundled, per the design doc rule);
+gravity follows and is skipped entirely when nothing moves. Tier
+12 is inert and never groups.
+
+Wired it into `apply.ts`: drop now runs land → cascade → lose
+check → score recompute → spawn. Two consequences fell out. The
+lose check moved from the post-land board to the post-cascade
+board, since a cascade can clear elements out of the overflow
+zone — a fresh row-7 cell is no longer a guaranteed loss. And
+score stitching had to learn about the cascade: every step
+before the board settles carries the prior score, and only the
+snapshot that lands on the stable board (last cascade step, or
+pair-land if the cascade was a no-op) gets the recomputed value.
+A small `stitchScore` helper does that placement.
+
+Filled in payloads for the previously stubbed `merge` and
+`gravity` step events. Merge carries an array of reacting
+groups (cells, landing, tierBefore, tierAfter); gravity carries
+per-cell movements. The animation driver already mapped both to
+0 ms, and the renderer's active-piece switch falls through to
+the committed snapshot, so cascades snap visually. Authoring
+the merge and gravity visuals is the next layer of work.
+
+Tests cover the five reaction acceptance scenarios (2.1–2.5)
+plus targeted unit tests for `findReactingGroups` (L-shape,
+plus-sign, disjoint groups, diagonal non-bridging, tier-12
+inertness) and `applyGravity` (no-op detection, order
+preservation, detonators falling like elements). The
+existing lose-condition tests in `apply.test.ts` had been
+written against a column of seven tier-5s, which the new
+cascade detects as a reacting group and clears; switched them
+to alternating tier-1 / tier-5 stacks that fill the column
+without forming a reactive component.
+
 ## 2026-05-02 — Computed and displayed the score
 
 The sidebar score has been pinned at 0 since the initial scaffolding.

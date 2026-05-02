@@ -480,28 +480,184 @@ describe('applyInput / drop / score', () => {
   });
 });
 
+describe('applyInput / drop / cascade integration', () => {
+  it('stitches merge and gravity steps between pair-land and spawn', () => {
+    // Acceptance test 2.1: drop horizontal [1/5] at column 4 (code
+    // column 3) onto a board with two tier-1s in row 1 columns 2–3.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . 1 1 . . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 5), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'merge',
+      'spawn',
+    ]);
+  });
+
+  it('holds the score on pair-land while a cascade is in flight, then commits it on the last cascade step', () => {
+    // Acceptance test 2.4: a two-step cascade settling on a single
+    // tier-3 (score = 9). Drop is at spec column 3 (code column 2),
+    // which lands the bottom tier-1 onto the floor next to an
+    // existing tier-1 row, triggering the cascade.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 2 . . .
+      . . . 1 . . .
+      . 1 . 1 . . .
+    `);
+    const state = makeState(pair(2, 'vertical', 1, 2), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    // Steps: pair-land, merge1, gravity, merge2, spawn.
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'merge',
+      'gravity',
+      'merge',
+      'spawn',
+    ]);
+    const priorScore = state.score;
+    expect(steps[0].snapshot.score).toBe(priorScore);
+    expect(steps[1].snapshot.score).toBe(priorScore);
+    expect(steps[2].snapshot.score).toBe(priorScore);
+    // Last cascade step is the moment the board becomes stable, so
+    // the new score lands here.
+    expect(steps[3].snapshot.score).toBe(9);
+    expect(steps[4].snapshot.score).toBe(9);
+  });
+
+  it('emits no merge or gravity step when nothing reacts', () => {
+    const state = makeState(pair(3, 'horizontal', 1, 2));
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual(['pair-land', 'spawn']);
+  });
+
+  it('lets the cascade rescue an overflow landing from a game-over', () => {
+    // Acceptance test 2.4 builds tier-3 in column 2; here we use the
+    // same shape but stack the column to row 6 first, so the pair
+    // initially lands its top in row 7 (overflow) — yet the cascade
+    // collapses the column and the stable board is well within the
+    // playfield.
+    //
+    // Column 1 is full of tier-1 alternating with tier-9 (so the
+    // initial board is stable). Drop a horizontal [1/2] at column 1.
+    // The new tier-1 lands at row 7 — overflow. But it sits on top
+    // of the existing tier-1 at row 6, forming a group of 2; no
+    // reaction. Game-over fires, since no cascade clears the
+    // overflow. (Sanity: the cascade is wired to run, but a
+    // fresh-overflow board with no group ≥ 3 doesn't react.)
+    const board = parseBoard(`
+      . 1 . . . . .
+      . 9 . . . . .
+      . 1 . . . . .
+      . 9 . . . . .
+      . 1 . . . . .
+      . 9 . . . . .
+      . 1 . . . . .
+    `);
+    const state = makeState(pair(1, 'horizontal', 1, 2), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'game-over',
+    ]);
+  });
+
+  it('runs the cascade before the lose check so a clearing reaction averts game-over', () => {
+    // Column 3 is filled to row 6 with tier-3s on the floor topped by
+    // alternating tiers that can react once the new pair lands. The
+    // post-land board has a vertical run of tier-1s in column 3 rows
+    // 6 and 7, plus an existing tier-1 at row 5 — together they form
+    // a group of 3, which clears column 3 down to row 5 and replaces
+    // it with a tier-2. The overflow is gone, so the game keeps
+    // going.
+    //
+    // Initial column 3: rows 0 = 9, 1 = 9, 2 = 9, 3 = 9, 4 = 9, 5 = 1.
+    // (Five tier-9 cells form a connected group of 5, which would be
+    // unstable. So substitute alternating tier-9 / tier-A so no
+    // reactive group of size ≥ 3 exists.)
+    const board = parseBoard(`
+      . . . . . . .
+      . . . 1 . . .
+      . . . A . . .
+      . . . 9 . . .
+      . . . A . . .
+      . . . 9 . . .
+      . . . A . . .
+    `);
+    const state = makeState(pair(3, 'vertical', 1, 1), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    // After-land column 3: A,9,A,9,A,1,1,1 (row 7 = the new top of
+    // pair). Three tier-1s in a row at rows 5–7 → react to tier-2 at
+    // row 5. Gravity is a no-op since nothing is above.
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'merge',
+      'spawn',
+    ]);
+    // Stable board: row 7 is empty, no game-over.
+    expect(next.board[7][3]).toEqual({ kind: 'empty' });
+    expect(next.board[5][3]).toEqual({ kind: 'element', tier: 2 });
+  });
+});
+
 describe('applyInput / drop / lose condition', () => {
+  // Lose-condition tests need boards that fill column 3 without
+  // forming any reactive group of size ≥ 3 — otherwise the cascade
+  // would clear cells out of the column before the lose check runs.
+  // Alternating tiers (1, 5, 1, 5, …) keep every same-tier component
+  // at size 1 vertically, with the pair-land potentially adding a
+  // size-2 group that still doesn't trigger.
+  const FULL_COLUMN_3 = `
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+  `;
+  const SIX_ROW_COLUMN_3 = `
+    . . . 5 . . .
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+  `;
+  const FIVE_ROW_COLUMN_3 = `
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+    . . . 5 . . .
+    . . . 1 . . .
+  `;
+
   it('emits a game-over step when a half lands in the overflow zone', () => {
     // Column 3 is full to the brim of the playfield (rows 0–6). The
     // horizontal pair drops its left half on top, landing at row 7
     // — the overflow zone. The right half lands cleanly at row 0
     // of the empty column 4, but a single half in row 7 is enough
     // to lose.
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
-    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const state = makeState(
+      pair(3, 'horizontal', 1, 2),
+      parseBoard(FULL_COLUMN_3),
+    );
     const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
     expect(steps).toHaveLength(2);
     expect(steps[0].event.kind).toBe('pair-land');
     expect(steps[1].event).toEqual({ kind: 'game-over' });
-    // The game-over snapshot mirrors the post-land state: same board,
+    // The game-over snapshot mirrors the stable state: same board,
     // no active piece.
     expect(steps[1].snapshot).toBe(next);
     expect(next.board[7][3]).toEqual({ kind: 'element', tier: 1 });
@@ -512,46 +668,31 @@ describe('applyInput / drop / lose condition', () => {
     // Column 3 has 6 elements (rows 0–5). A vertical pair lands its
     // bottom at row 6 (still playfield) and its top at row 7
     // (overflow). Top half alone is enough to trigger the loss.
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
-    const state = makeState(pair(3, 'vertical', 1, 2), board);
+    const state = makeState(
+      pair(3, 'vertical', 1, 2),
+      parseBoard(SIX_ROW_COLUMN_3),
+    );
     const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
-    expect(steps[1].event).toEqual({ kind: 'game-over' });
+    expect(steps[steps.length - 1].event).toEqual({ kind: 'game-over' });
   });
 
   it('does not trigger game-over when the pair just fits in the playfield', () => {
     // Column 3 has 5 elements (rows 0–4). A vertical pair fills rows
     // 5 and 6 — the topmost playfield row. Nothing in the overflow
     // zone, so the game continues.
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
-    const state = makeState(pair(3, 'vertical', 1, 2), board);
+    const state = makeState(
+      pair(3, 'vertical', 1, 2),
+      parseBoard(FIVE_ROW_COLUMN_3),
+    );
     const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
-    expect(steps[1].event.kind).toBe('spawn');
+    expect(steps[steps.length - 1].event.kind).toBe('spawn');
   });
 
   it('preserves the preview and the RNG on game-over', () => {
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
-    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const state = makeState(
+      pair(3, 'horizontal', 1, 2),
+      parseBoard(FULL_COLUMN_3),
+    );
     const [next, , rng] = applyInput(state, { kind: 'drop' }, RNG);
     // No new preview drawn, so the RNG is untouched and the preview
     // carries forward from the prior state.
@@ -560,16 +701,10 @@ describe('applyInput / drop / lose condition', () => {
   });
 
   it('locks input after game-over (no active piece to act on)', () => {
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
-    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const state = makeState(
+      pair(3, 'horizontal', 1, 2),
+      parseBoard(FULL_COLUMN_3),
+    );
     const [afterDrop] = applyInput(state, { kind: 'drop' }, RNG);
     const [afterShift, shiftSteps] = applyInput(
       afterDrop,
@@ -581,21 +716,11 @@ describe('applyInput / drop / lose condition', () => {
   });
 
   it('keeps the score at its prior value on game-over', () => {
-    // Column 3 is full of tier-5s; left-half lands in the overflow.
     // Pre-existing score (carried in via state) should survive
     // unchanged — the spec says score is recomputed only when the
     // round did not end.
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
     const state: State = {
-      ...makeState(pair(3, 'horizontal', 1, 2), board),
+      ...makeState(pair(3, 'horizontal', 1, 2), parseBoard(FULL_COLUMN_3)),
       score: 999,
     };
     const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
@@ -607,18 +732,12 @@ describe('applyInput / drop / lose condition', () => {
   it('triggers on a detonator landing in the overflow zone', () => {
     // Column 3 has 7 elements (rows 0–6). Dropping a detonator
     // places it at row 7, which is the overflow zone — game over.
-    const board = parseBoard(`
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-      . . . 5 . . .
-    `);
-    const state = makeState({ kind: 'detonator', column: 3 }, board);
+    const state = makeState(
+      { kind: 'detonator', column: 3 },
+      parseBoard(FULL_COLUMN_3),
+    );
     const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
-    expect(steps[1].event).toEqual({ kind: 'game-over' });
+    expect(steps[steps.length - 1].event).toEqual({ kind: 'game-over' });
     expect(next.board[7][3]).toEqual({ kind: 'detonator' });
   });
 });

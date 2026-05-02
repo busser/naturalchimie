@@ -96,7 +96,24 @@ export type Step = {
   readonly snapshot: State;
 };
 
-// Per-event payloads are added when each step kind is implemented.
+// One reacting connected component, captured for the merge step's
+// animation. The animation collapses every cell in `cells` into
+// `landing` and replaces it with a tier-`tierAfter` element. A merge
+// step carries one entry per concurrent group on the same cascade
+// tick; the design doc's "concurrent effects belong inside a single
+// step" rule.
+export type ReactingGroup = {
+  readonly cells: readonly Pos[];
+  readonly landing: Pos;
+  readonly tierBefore: Tier;
+  readonly tierAfter: Tier;
+};
+
+// One cell falling under gravity. Same column on both ends; only the
+// row changes. The animation derives per-column drop distances from
+// the list, so cells stay grouped to whichever column they belong to.
+export type Movement = { readonly from: Pos; readonly to: Pos };
+
 export type StepEvent =
   | { readonly kind: "pair-shift" }
   | { readonly kind: "pair-rotate" }
@@ -106,8 +123,8 @@ export type StepEvent =
       readonly secondLandingRow: number;
     }
   | { readonly kind: "solo-land"; readonly landingRow: number }
-  | { readonly kind: "merge" }
-  | { readonly kind: "gravity" }
+  | { readonly kind: "merge"; readonly groups: readonly ReactingGroup[] }
+  | { readonly kind: "gravity"; readonly movements: readonly Movement[] }
   | { readonly kind: "detonate" }
   | { readonly kind: "dynamite-blast" }
   | { readonly kind: "spawn" }

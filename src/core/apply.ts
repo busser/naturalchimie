@@ -1,10 +1,9 @@
 // Pure transition function for the core: `(state, input, rng) →
-// (state', steps, rng')`. Currently handles `shift`, `rotate`, the
-// landing portion of `drop`, and the post-drop spawn that promotes
-// the preview to active. The cascade that should sit between landing
-// and spawn (reactions, gravity, scoring, lose check) will land
-// alongside the cascade simulator.
+// (state', steps, rng')`. Handles `shift`, `rotate`, and `drop`. A
+// drop runs the full chain: land → cascade (reactions + gravity to
+// fixpoint) → lose check → score recompute → spawn.
 
+import { runCascade } from './cascade';
 import { computeScore } from './score';
 import { pieceToActive, samplePiece } from './spawn';
 import type { ActivePiece, Board, Cell, Input, State, Step } from './state';
@@ -107,45 +106,96 @@ function drop(
   active: ActivePiece,
   rng: Rng,
 ): [State, Step[], Rng] {
-  const { board, landStep } = landActive(state, active);
-  // Lose check runs against the stable board. With no cascade
-  // simulator yet, the post-land board is the stable point: if any
-  // cell sits in the overflow zone, the round ends. No new preview
-  // is drawn (the RNG stays put) and no piece is promoted — the
-  // game-over step's snapshot mirrors the post-land state. Score
-  // does not update on game-over per the spec ("if the round did
-  // not end, the score is recomputed"); the displayed score holds
-  // at its last stable value.
-  if (isLost(board)) {
-    const afterLand: State = { ...state, board, active: null };
-    const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
-    const gameOverStep: Step = {
-      event: { kind: 'game-over' },
-      snapshot: afterLand,
+  const { board: postLandBoard, landStep } = landActive(state, active);
+  const { board: stableBoard, steps: cascadeSteps } = runCascade(
+    postLandBoard,
+    state,
+  );
+
+  // Lose check runs on the post-cascade stable board: a cascade can
+  // clear elements out of the overflow zone, so a row-7 cell right
+  // after landing is not yet a loss. No new preview is drawn (the
+  // RNG stays put) and no piece is promoted — the game-over step's
+  // snapshot mirrors the stable state. Score does not update on
+  // game-over per the spec ("if the round did not end, the score is
+  // recomputed"); every emitted snapshot holds the prior score.
+  if (isLost(stableBoard)) {
+    const stableState: State = { ...state, board: stableBoard, active: null };
+    const landSnapshot: State = {
+      ...state,
+      board: postLandBoard,
+      active: null,
     };
-    return [afterLand, [landStepWithSnapshot, gameOverStep], rng];
+    return [
+      stableState,
+      [
+        { ...landStep, snapshot: landSnapshot },
+        ...cascadeSteps,
+        { event: { kind: 'game-over' }, snapshot: stableState },
+      ],
+      rng,
+    ];
   }
-  // Stable-board score: the pair-land snapshot commits when the
-  // animation ends, which is the moment the player sees the board
-  // come to rest. When the cascade simulator lands, this hook moves
-  // to the end of the cascade — same role, later trigger.
-  const newScore = computeScore(board);
-  const afterLand: State = { ...state, board, active: null, score: newScore };
-  const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
+
+  // Stable-board score: every step before the board settles carries
+  // the prior score; the snapshot that lands on the stable board is
+  // the first to show the new score. That step is the last cascade
+  // step when the cascade ran, otherwise the pair-land step itself.
+  const newScore = computeScore(stableBoard);
+  const stepsBeforeSpawn = stitchScore(
+    landStep,
+    cascadeSteps,
+    state,
+    postLandBoard,
+    newScore,
+  );
+
   // Preview slides to active and a fresh piece is drawn for the
-  // preview, against the post-land board. Spec sequencing
-  // (03-spawning.md "Sequencing relative to the cascade") draws
-  // against the post-cascade board; until cascades land that's the
-  // post-land board.
-  const [newPreview, nextRng] = samplePiece(board, rng);
+  // preview, against the post-cascade board (03-spawning.md
+  // "Sequencing relative to the cascade").
+  const [newPreview, nextRng] = samplePiece(stableBoard, rng);
   const afterSpawn: State = {
-    board,
+    board: stableBoard,
     active: pieceToActive(state.preview),
     preview: newPreview,
     score: newScore,
   };
   const spawnStep: Step = { event: { kind: 'spawn' }, snapshot: afterSpawn };
-  return [afterSpawn, [landStepWithSnapshot, spawnStep], nextRng];
+  return [afterSpawn, [...stepsBeforeSpawn, spawnStep], nextRng];
+}
+
+// Place the new score on the first stable-board snapshot in the
+// drop's step chain. With no cascade, that snapshot is pair-land's;
+// otherwise it's the last cascade step (gravity if it ran, merge if
+// the gravity tick was a no-op and got skipped).
+function stitchScore(
+  landStep: Omit<Step, 'snapshot'>,
+  cascadeSteps: readonly Step[],
+  priorState: State,
+  postLandBoard: Board,
+  newScore: number,
+): Step[] {
+  if (cascadeSteps.length === 0) {
+    const landSnapshot: State = {
+      ...priorState,
+      board: postLandBoard,
+      active: null,
+      score: newScore,
+    };
+    return [{ ...landStep, snapshot: landSnapshot }];
+  }
+  const landSnapshot: State = {
+    ...priorState,
+    board: postLandBoard,
+    active: null,
+  };
+  const lastIndex = cascadeSteps.length - 1;
+  const cascadeWithScore = cascadeSteps.map((step, index) =>
+    index === lastIndex
+      ? { ...step, snapshot: { ...step.snapshot, score: newScore } }
+      : step,
+  );
+  return [{ ...landStep, snapshot: landSnapshot }, ...cascadeWithScore];
 }
 
 function isLost(board: Board): boolean {
