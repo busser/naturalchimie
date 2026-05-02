@@ -4,7 +4,12 @@
 // positions instead. Sky and chrome live in CSS; this canvas is
 // transparent.
 
-import type { InFlight } from '../animation/driver';
+import {
+  SPAWN_DURATION_MS,
+  SPAWN_PHASE_DOWN_MS,
+  SPAWN_PHASE_OUT_MS,
+  type InFlight,
+} from '../animation/driver';
 import {
   SPAWN_ROW,
   type ActivePiece,
@@ -26,6 +31,15 @@ const VISIBLE_ROWS = 12;
 // playfield) and code row 7 (start of overflow zone) to mark the
 // lose threshold. See 04-visual-style.md.
 const LOSE_THRESHOLD_ROW = 7;
+
+// During the spawn step's slide-down phase, the new active piece
+// enters the playfield from above. 3 cells puts the piece at
+// row SPAWN_ROW + 3 = 12 at the start — just above the topmost
+// rendered row (11) — and arrives at the spawn row at phase end.
+const SPAWN_ENTRY_OFFSET_CELLS = 3;
+const SPAWN_PHASE_OUT_END_T = SPAWN_PHASE_OUT_MS / SPAWN_DURATION_MS;
+const SPAWN_PHASE_DOWN_END_T =
+  (SPAWN_PHASE_OUT_MS + SPAWN_PHASE_DOWN_MS) / SPAWN_DURATION_MS;
 
 type RenderHalf = {
   readonly sprite: SpriteAsset;
@@ -63,9 +77,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
       // pile separately put a falling pair in front of board cells
       // below it on the way down, then snapped behind them on commit.
       const items = collectBoardItems(state.board, sprites);
-      if (state.active !== null) {
-        items.push(...activeHalvesAtMoment(state.active, inflight, sprites));
-      }
+      items.push(...activeHalves(state, inflight, sprites));
       items.sort((a, b) => b.row - a.row);
       for (const item of items) {
         drawAt(ctx, item.sprite, item.col, item.row, cellSize, cssHeight);
@@ -141,6 +153,45 @@ function assetForCell(
   return cell.kind === 'detonator'
     ? sprites.detonator
     : sprites.byTier[cell.tier];
+}
+
+// During the spawn step the committed snapshot still has `active:
+// null` (post-land) — the new piece only commits at step end. Read it
+// from the in-flight step's snapshot and slide it down from above the
+// canvas. Outside spawn, fall through to the existing rules, which
+// expect a non-null committed active.
+function activeHalves(
+  state: State,
+  inflight: InFlight | null,
+  sprites: SpriteAtlas,
+): RenderHalf[] {
+  if (inflight !== null && inflight.step.event.kind === 'spawn') {
+    const next = inflight.step.snapshot.active;
+    if (next === null) return [];
+    return spawnSlideHalves(next, inflight.t, sprites);
+  }
+  if (state.active === null) return [];
+  return activeHalvesAtMoment(state.active, inflight, sprites);
+}
+
+function spawnSlideHalves(
+  next: ActivePiece,
+  t: number,
+  sprites: SpriteAtlas,
+): RenderHalf[] {
+  // Phase 1: prev preview is sliding out of the recess; nothing on the
+  // playfield yet so the eye sees one piece at a time.
+  if (t < SPAWN_PHASE_OUT_END_T) return [];
+  const halves = staticHalves(next, sprites);
+  // Phase 3: piece has settled at the spawn row; new preview is
+  // sliding into the recess.
+  if (t >= SPAWN_PHASE_DOWN_END_T) return halves;
+  // Phase 2: piece slides from above the canvas to the spawn row.
+  const phaseT =
+    (t - SPAWN_PHASE_OUT_END_T) / (SPAWN_PHASE_DOWN_END_T - SPAWN_PHASE_OUT_END_T);
+  const eased = easeInOut(phaseT);
+  const rowOffset = (1 - eased) * SPAWN_ENTRY_OFFSET_CELLS;
+  return halves.map((h) => ({ ...h, row: h.row + rowOffset }));
 }
 
 function activeHalvesAtMoment(
@@ -337,6 +388,10 @@ function easeOut(t: number): number {
 
 function easeIn(t: number): number {
   return t * t;
+}
+
+function easeInOut(t: number): number {
+  return t * t * (3 - 2 * t);
 }
 
 function lerp(a: number, b: number, t: number): number {

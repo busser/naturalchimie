@@ -56,6 +56,8 @@ async function main(): Promise<void> {
     canvas: previewCanvas,
     sprites,
     cellSize: CELL_SIZE,
+    getSnapshot: store.getSnapshot,
+    getInFlight: driver.getInFlight,
   });
   const keyboard = attachKeyboard(store);
 
@@ -73,8 +75,8 @@ async function main(): Promise<void> {
     driver.tick(now);
     keyboard.tick();
     renderer.draw(now);
+    previewRenderer.draw(now);
     const snapshot = store.getSnapshot();
-    previewRenderer.draw(snapshot.preview);
     if (snapshot.score !== lastScore) {
       scoreEl.textContent = String(snapshot.score);
       lastScore = snapshot.score;

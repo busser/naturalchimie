@@ -3,6 +3,43 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Animated the preview-to-active handoff
+
+The `spawn` step had duration 0, so after a drop the preview piece
+silently teleported into the spawn row. Gave the step a real duration
+covering three strictly sequential phases (200 ms each, 600 ms total):
+prev preview slides out of the recess, then the new active slides into
+the spawn row, then the new preview slides into the recess. Per-phase
+constants live in the driver so both renderers split `t` against the
+same boundaries.
+
+The first cut had the slide-out and slide-down running concurrently
+(reflecting the spec's single 200 ms "piece travels from preview to
+spawn" motion). It broke the illusion the spec calls for: with the
+sidebar to the left of the playfield rather than below it, two copies
+of the piece were on screen at once instead of one piece moving
+between regions. Sequential phases — paired with the ease-in-out
+boundary velocities providing a natural pause — read as one piece at
+a time without an explicit gap.
+
+Playfield: `state.active` is null on the post-land snapshot the spawn
+step starts from, so the existing `state.active !== null` guard
+skipped rendering during the slide-down. Pulled the active-piece
+dispatch into its own helper that, on a spawn step, reads
+`inflight.step.snapshot.active` and during phase 2 slides it from
+row SPAWN_ROW + 3 (just above the topmost rendered row) down to the
+spawn row. Phase 1 returns no halves; phase 3 returns the static halves.
+
+Preview: now takes `getSnapshot` and `getInFlight` like the playfield
+does. The canvas grew from 1.5 cells to a full 2 cells tall to match
+the recess's 96 px height — at the prior size it was centered with
+12 px of parchment above it, so a sliding piece vanished partway up
+the recess instead of at its top edge. With the canvas filling the
+recess the piece's slide ends exactly at the top edge. Top headroom
+moved from 0.5 to 0.75 cells to keep the piece's visual rest position
+unchanged (piece y = 36–84 px in either layout); the remaining 0.25
+cells of bottom headroom is what's left.
+
 ## 2026-05-02 — Added the next-piece preview
 
 The sidebar's preview recess was empty. Added `src/renderer/preview.ts`,

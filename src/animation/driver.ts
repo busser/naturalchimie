@@ -13,6 +13,19 @@ const ROTATE_DURATION_MS = 200;
 // fall at the same rate; the slower half (longer drop) sets the step's
 // total duration.
 const FALL_MS_PER_CELL = 50;
+// Per 05-animations.md "Preview window animation", reshaped for our
+// sidebar-on-the-left layout: prev preview slides out of the preview
+// recess, then the new active slides into the spawn row, then the new
+// preview slides into the recess. Renderers split the step's `t`
+// against these phase boundaries. Strictly sequential — overlapping
+// phases 1 and 2 broke the illusion of one piece moving from preview
+// to spawn area (the prev preview was leaving while a duplicate of it
+// was already arriving).
+export const SPAWN_PHASE_OUT_MS = 200;
+export const SPAWN_PHASE_DOWN_MS = 200;
+export const SPAWN_PHASE_IN_MS = 200;
+export const SPAWN_DURATION_MS =
+  SPAWN_PHASE_OUT_MS + SPAWN_PHASE_DOWN_MS + SPAWN_PHASE_IN_MS;
 
 export type InFlight = {
   readonly step: Step;
@@ -89,11 +102,12 @@ function stepDuration(step: Step): number {
     }
     case 'solo-land':
       return FALL_MS_PER_CELL * (SPAWN_ROW - step.event.landingRow);
+    case 'spawn':
+      return SPAWN_DURATION_MS;
     case 'merge':
     case 'gravity':
     case 'detonate':
     case 'dynamite-blast':
-    case 'spawn':
     case 'game-over':
       // Durations land alongside each step's implementation.
       return 0;
