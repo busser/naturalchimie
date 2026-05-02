@@ -3,6 +3,22 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Fixed asymmetric pair-fall speed
+
+When a horizontal pair landed on columns of different heights, the
+two halves visually obeyed different gravity: the shorter-fall half
+was moving faster, not just finishing earlier. Tracked it down to
+`landHalves` scaling raw `t` by `maxDistance / ownDistance` per
+half, which stretched the shorter half's `easeIn` curve and made
+its peak velocity higher.
+
+Fix: share one eased progress across both halves and convert it to
+cells-fallen, then derive each half's progress from
+`cellsFallen / ownDistance` clamped to 1. Same gravity for both;
+the shorter one just clamps to its target sooner. Vertical pairs
+were unaffected because both halves cover the same total distance
+(the ±0.5 spawn offsets cancel against the row-apart landings).
+
 ## 2026-05-02 — Landed solo items on drop
 
 With spawn able to put a dynamite or detonator into the active slot,

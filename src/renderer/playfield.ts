@@ -277,11 +277,12 @@ function pairMidpoint(active: ActivePiece): { col: number; row: number } {
     : { col: active.column, row: SPAWN_ROW };
 }
 
-// Each half falls in place at 50 ms/cell (driver-enforced via the
-// step's total duration). When the two halves' fall distances differ
-// the shorter half finishes first and then sits at its landing cell;
-// the per-half progress below scales raw `t` accordingly so both
-// halves move at the same on-screen speed regardless of distance.
+// Both halves fall under the same eased curve so they travel the
+// same vertical distance per unit time. The shorter-fall half hits
+// its landing row partway through and sits there while the longer
+// half finishes. (An earlier version scaled `t` per half, which made
+// the shorter half move faster instead of just stopping earlier —
+// halves looked like they obeyed different gravity.)
 function landHalves(
   prev: ActivePiece,
   step: Step,
@@ -301,15 +302,15 @@ function landHalves(
   ];
   const distances = fromHalves.map((from, i) => from.row - targets[i].row);
   const maxDistance = Math.max(...distances);
+  const cellsFallen = easeIn(t) * maxDistance;
   return fromHalves.map((from, i) => {
     const ownDistance = distances[i];
-    const ownT =
-      ownDistance > 0 ? Math.min(1, (t * maxDistance) / ownDistance) : 1;
-    const eased = easeIn(ownT);
+    const progress =
+      ownDistance > 0 ? Math.min(1, cellsFallen / ownDistance) : 1;
     return {
       sprite: from.sprite,
-      col: lerp(from.col, targets[i].col, eased),
-      row: lerp(from.row, targets[i].row, eased),
+      col: lerp(from.col, targets[i].col, progress),
+      row: lerp(from.row, targets[i].row, progress),
     };
   });
 }
