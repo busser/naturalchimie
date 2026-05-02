@@ -1,0 +1,72 @@
+:root {
+  --sky-top: #a8d8f0;
+  --sky-bottom: #80b8e0;
+  --parchment: #b88a5a;
+  --parchment-recess: #8a6038;
+  --filigree: #f0e8d0;
+  --score-ink: #5a3820;
+  --frame: #2a1810;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--frame);
+  color: var(--score-ink);
+  font-family: Georgia, 'Times New Roman', serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#app {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+}
+
+.sidebar {
+  width: 200px;
+  background: var(--parchment);
+  border: 1px solid var(--frame);
+  border-radius: 4px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.score {
+  font-size: 36px;
+  font-weight: bold;
+  color: var(--score-ink);
+  text-align: center;
+  line-height: 1;
+}
+
+.preview {
+  background: var(--parchment-recess);
+  border-radius: 4px;
+  height: 96px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.playfield {
+  position: relative;
+  background: linear-gradient(var(--sky-top), var(--sky-bottom));
+  border: 1px solid var(--frame);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.playfield canvas {
+  display: block;
+}

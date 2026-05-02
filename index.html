@@ -6,7 +6,15 @@
     <title>Naturalchimie</title>
   </head>
   <body>
-    <div id="app">Loading…</div>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="score" id="score">0</div>
+        <div class="preview" id="preview"></div>
+      </aside>
+      <main class="playfield">
+        <canvas id="playfield-canvas"></canvas>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
