@@ -30,6 +30,12 @@ export function createStore(seed: number): Store {
   let [committed, rng] = createInitialState(createRng(seed));
   const inputQueue: Input[] = [];
   const stepQueue: Step[] = [];
+  // Closes the moment a `drop` is dispatched (not when it applies — the
+  // pair is committed from the player's perspective as soon as they
+  // press down) and reopens when a `spawn` step commits a fresh active
+  // piece. Implements the "drop closes the buffer" rule from
+  // 08-software-design.md.
+  let acceptingInput = committed.active !== null;
 
   function drainInputs(): void {
     while (stepQueue.length === 0 && inputQueue.length > 0) {
@@ -50,14 +56,18 @@ export function createStore(seed: number): Store {
       const step = stepQueue.shift();
       if (!step) return;
       committed = step.snapshot;
+      if (step.event.kind === 'spawn') acceptingInput = true;
     },
     dispatch: (input) => {
+      if (!acceptingInput) return;
       inputQueue.push(input);
+      if (input.kind === 'drop') acceptingInput = false;
     },
     restart: (newSeed) => {
       [committed, rng] = createInitialState(createRng(newSeed));
       inputQueue.length = 0;
       stepQueue.length = 0;
+      acceptingInput = committed.active !== null;
     },
   };
 }

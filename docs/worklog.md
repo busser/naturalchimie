@@ -3,6 +3,34 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Stopped buffered drops from leaking across pairs
+
+Pressing down three times in quick succession — once with a pair on
+the board, twice during the fall animation — auto-dropped the next
+two pairs. The store was unconditionally enqueuing every fresh
+keydown. While the first drop's steps drained from the step queue,
+the trailing two drops sat in the input queue, then applied to the
+next pairs as soon as their spawn steps committed.
+
+Spec is explicit on this: `08-software-design.md` says drop closes the
+buffer for the current pair, and inputs that arrive before the next
+pair has spawned are ignored. Added an `acceptingInput` flag in the
+store. It closes the moment a `drop` is dispatched (not when it
+applies — the pair is committed from the player's perspective the
+instant they press down) and reopens when a `spawn` step commits a
+fresh active piece. Game-over runs end without a spawn step, so the
+flag correctly stays closed; `restart` resets it from the new initial
+state.
+
+I considered gating dispatch on `committed.active !== null` instead.
+It doesn't work: when the second drop is pressed during the fall
+animation, the pair-land step hasn't committed yet, so `committed`
+still shows the old pair active. Same problem if dispatch checked the
+last queued step's snapshot — the spawn step is already queued, so
+the future state shows the next pair active. The flag tracks the
+intent (a drop has been issued) directly, which is what the spec
+describes.
+
 ## 2026-05-02 — Animated the preview-to-active handoff
 
 The `spawn` step had duration 0, so after a drop the preview piece
