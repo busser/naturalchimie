@@ -88,6 +88,8 @@ function setupCanvas(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('createRenderer: 2D context unavailable');
   ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   return ctx;
 }
 

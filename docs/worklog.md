@@ -3,6 +3,18 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Sharpened sprite downscaling
+
+Sprites looked pixelated on the playfield. The source PNGs are
+1024×1536 with cell footprints around 400 px, scaled to a 48 px
+cell (≈96 px on a HiDPI display) — roughly an 8× downscale. Canvas
+2D `drawImage` defaults to low-quality bilinear smoothing, which
+aliases badly at that ratio. Set `imageSmoothingQuality = 'high'`
+in `setupCanvas` and the result is good enough by eye. Pre-baking
+each sprite at load time via `createImageBitmap` with
+`resizeQuality: 'high'` is held in reserve if a future asset or
+cell size pushes the ratio further.
+
 ## 2026-05-02 — Implemented playable shift/rotate UI
 
 Built the four runtime layers behind the active pair: bootstrap
