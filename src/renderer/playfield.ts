@@ -164,6 +164,13 @@ function activeHalvesAtMoment(
       // piece is in the air during the fall and the board picks it up
       // at commit. Render from the prev pair plus the step's payload.
       return landHalves(prev, inflight.step, inflight.t, sprites);
+    case 'solo-land':
+      return soloLandHalves(
+        prev,
+        inflight.step.event.landingRow,
+        inflight.t,
+        sprites,
+      );
     default:
       return staticHalves(committedActive, sprites);
   }
@@ -305,6 +312,22 @@ function landHalves(
       row: lerp(from.row, targets[i].row, eased),
     };
   });
+}
+
+function soloLandHalves(
+  prev: ActivePiece,
+  landingRow: number,
+  t: number,
+  sprites: SpriteAtlas,
+): RenderHalf[] {
+  if (prev.kind === 'pair') return staticHalves(prev, sprites);
+  const fromHalves = staticHalves(prev, sprites);
+  const eased = easeIn(t);
+  return fromHalves.map((from) => ({
+    sprite: from.sprite,
+    col: from.col,
+    row: lerp(from.row, landingRow, eased),
+  }));
 }
 
 function easeOut(t: number): number {

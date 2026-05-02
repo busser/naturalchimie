@@ -3,6 +3,21 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Landed solo items on drop
+
+With spawn able to put a dynamite or detonator into the active slot,
+dropping one used to throw "solo items not yet implemented" and
+freeze the loop. Added a `solo-land` step kind with a `landingRow`
+payload and split `drop` over the active's kind. Detonator lands as
+a `detonator` board cell at the lowest empty row in its column;
+the spec's "piece lands on a detonator" trigger handles a *future*
+piece falling onto it, not the detonator's own landing. Dynamite
+plays the fall and vanishes — its blast belongs to the cascade
+simulator, marked with a `TODO(busser)`. The driver sizes
+`solo-land` at 50 ms/cell and the renderer animates the fall by
+lerping from the spawn row to the landing row. The spawn step still
+follows either kind of landing.
+
 ## 2026-05-02 — Unified renderer z-order across board and active
 
 The playfield drew the board first, then drew the active piece on

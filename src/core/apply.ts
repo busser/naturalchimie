@@ -102,18 +102,9 @@ function drop(
   active: ActivePiece,
   rng: Rng,
 ): [State, Step[], Rng] {
-  if (active.kind !== 'pair') {
-    throw new Error('drop: solo items not yet implemented');
-  }
-  const { board, firstLandingRow, secondLandingRow } = landPair(
-    state.board,
-    active,
-  );
+  const { board, landStep } = landActive(state, active);
   const afterLand: State = { ...state, board, active: null };
-  const landStep: Step = {
-    event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
-    snapshot: afterLand,
-  };
+  const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
   // Preview slides to active and a fresh piece is drawn for the
   // preview, against the post-land board. Spec sequencing
   // (03-spawning.md "Sequencing relative to the cascade") draws
@@ -127,7 +118,67 @@ function drop(
     score: state.score,
   };
   const spawnStep: Step = { event: { kind: 'spawn' }, snapshot: afterSpawn };
-  return [afterSpawn, [landStep, spawnStep], nextRng];
+  return [afterSpawn, [landStepWithSnapshot, spawnStep], nextRng];
+}
+
+type LandStepDraft = { board: Board; landStep: Omit<Step, 'snapshot'> };
+
+function landActive(state: State, active: ActivePiece): LandStepDraft {
+  switch (active.kind) {
+    case 'pair': {
+      const { board, firstLandingRow, secondLandingRow } = landPair(
+        state.board,
+        active,
+      );
+      return {
+        board,
+        landStep: {
+          event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
+        },
+      };
+    }
+    case 'detonator': {
+      // The spec's "if a piece lands on a detonator, the detonator
+      // triggers first" handles a piece dropped *onto* an existing
+      // detonator. Dropping the detonator itself just lands it as a
+      // board cell, waiting for a future piece to set it off.
+      const { board, landingRow } = landSolo(state.board, active.column, {
+        kind: 'detonator',
+      });
+      return { board, landStep: { event: { kind: 'solo-land', landingRow } } };
+    }
+    case 'dynamite': {
+      // TODO(busser): dynamite should detonate on impact and clear a
+      // path of cells; that lives behind the cascade simulator. Until
+      // then it lands and vanishes — the visual fall plays, no board
+      // cells change.
+      const landingRow = lowestEmptyRow(state.board, active.column);
+      return {
+        board: state.board,
+        landStep: { event: { kind: 'solo-land', landingRow } },
+      };
+    }
+  }
+}
+
+function landSolo(
+  board: Board,
+  column: number,
+  cell: Cell,
+): { board: Board; landingRow: number } {
+  const next: Cell[][] = board.map((row) => [...row]);
+  const landingRow = placeFalling(next, column, cell);
+  return { board: next, landingRow };
+}
+
+function lowestEmptyRow(
+  board: readonly (readonly Cell[])[],
+  column: number,
+): number {
+  for (let row = 0; row < board.length; row++) {
+    if (board[row][column].kind === 'empty') return row;
+  }
+  throw new Error(`drop: column ${column} has no empty cell`);
 }
 
 // Each half falls independently to the lowest empty cell in its
@@ -160,11 +211,7 @@ function placeFalling(
   column: number,
   cell: Cell,
 ): number {
-  for (let row = 0; row < board.length; row++) {
-    if (board[row][column].kind === 'empty') {
-      board[row][column] = cell;
-      return row;
-    }
-  }
-  throw new Error(`drop: column ${column} has no empty cell`);
+  const row = lowestEmptyRow(board, column);
+  board[row][column] = cell;
+  return row;
 }

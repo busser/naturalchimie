@@ -80,6 +80,8 @@ function stepDuration(step: Step): number {
       const secondDistance = SPAWN_ROW - step.event.secondLandingRow;
       return FALL_MS_PER_CELL * Math.max(firstDistance, secondDistance);
     }
+    case 'solo-land':
+      return FALL_MS_PER_CELL * (SPAWN_ROW - step.event.landingRow);
     case 'merge':
     case 'gravity':
     case 'detonate':

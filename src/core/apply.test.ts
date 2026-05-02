@@ -382,4 +382,63 @@ describe('applyInput / drop', () => {
     const [, , rng] = applyInput(state, { kind: 'drop' }, RNG);
     expect(rng).not.toEqual(RNG);
   });
+
+  it('lands a detonator on the floor as a board cell', () => {
+    const state = makeState({ kind: 'detonator', column: 3 });
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[0][3]).toEqual({ kind: 'detonator' });
+    expect(steps).toHaveLength(2);
+    expect(steps[0].event).toEqual({ kind: 'solo-land', landingRow: 0 });
+    expect(steps[0].snapshot.active).toBeNull();
+    expect(steps[1].event.kind).toBe('spawn');
+  });
+
+  it('lands a detonator at the lowest empty cell on a partially filled column', () => {
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState({ kind: 'detonator', column: 3 }, board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[2][3]).toEqual({ kind: 'detonator' });
+    expect(steps[0].event).toEqual({ kind: 'solo-land', landingRow: 2 });
+  });
+
+  it('lands a dynamite without placing anything on the board', () => {
+    // Dynamite's blast belongs to the cascade simulator. Until that
+    // lands the piece falls and vanishes — no board cell, but the
+    // landing row still flows through so the visual fall plays.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+    `);
+    const state = makeState({ kind: 'dynamite', column: 3 }, board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[1][3]).toEqual({ kind: 'empty' });
+    expect(next.board[0][3]).toEqual({ kind: 'element', tier: 5 });
+    expect(steps[0].event).toEqual({ kind: 'solo-land', landingRow: 1 });
+  });
+
+  it('promotes the preview after dropping a solo item', () => {
+    const state = makeState({ kind: 'detonator', column: 3 });
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    // DUMMY_PREVIEW is a 1/1 pair; the spawn step promotes it.
+    expect(next.active).toEqual({
+      kind: 'pair',
+      column: 3,
+      orientation: 'horizontal',
+      first: 1,
+      second: 1,
+    });
+  });
 });

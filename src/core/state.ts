@@ -105,6 +105,7 @@ export type StepEvent =
       readonly firstLandingRow: number;
       readonly secondLandingRow: number;
     }
+  | { readonly kind: "solo-land"; readonly landingRow: number }
   | { readonly kind: "merge" }
   | { readonly kind: "gravity" }
   | { readonly kind: "detonate" }
