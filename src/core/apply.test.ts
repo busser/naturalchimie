@@ -244,16 +244,19 @@ describe('applyInput / drop', () => {
     // floor with first in column 3 and second in column 4.
     const state = makeState(pair(3, 'horizontal', 1, 2));
     const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
-    expect(next.active).toBeNull();
     expect(next.board[0][3]).toEqual({ kind: 'element', tier: 1 });
     expect(next.board[0][4]).toEqual({ kind: 'element', tier: 2 });
-    expect(steps).toHaveLength(1);
+    // Drop now produces two steps: the land, then the preview→active
+    // promotion + new preview draw.
+    expect(steps).toHaveLength(2);
     expect(steps[0].event).toEqual({
       kind: 'pair-land',
       firstLandingRow: 0,
       secondLandingRow: 0,
     });
-    expect(steps[0].snapshot).toBe(next);
+    expect(steps[0].snapshot.active).toBeNull();
+    expect(steps[1].event.kind).toBe('spawn');
+    expect(steps[1].snapshot).toBe(next);
   });
 
   it('reports asymmetric landing rows in the step event', () => {
@@ -327,10 +330,35 @@ describe('applyInput / drop', () => {
     expect(next.board[0][4]).toEqual({ kind: 'element', tier: 5 });
   });
 
-  it('clears the active piece', () => {
+  it('promotes the preview to active and draws a fresh preview', () => {
+    // Preview is a tier-1/1 pair (DUMMY_PREVIEW). After the drop the
+    // active piece is that pair, sitting horizontal at the spawn
+    // column, and the preview holds whatever was drawn next.
     const state = makeState(pair(3, 'horizontal'));
     const [next] = applyInput(state, { kind: 'drop' }, RNG);
-    expect(next.active).toBeNull();
+    expect(next.active).toEqual({
+      kind: 'pair',
+      column: 3,
+      orientation: 'horizontal',
+      first: 1,
+      second: 1,
+    });
+    // With pool {1, 2} on the post-land board both halves of the new
+    // preview must be tier-1 or tier-2.
+    expect(next.preview.kind).toBe('pair');
+    const newPreview = next.preview as Extract<Piece, { kind: 'pair' }>;
+    expect([1, 2]).toContain(newPreview.first);
+    expect([1, 2]).toContain(newPreview.second);
+  });
+
+  it('emits a post-land snapshot with no active piece, then a spawn snapshot', () => {
+    const state = makeState(pair(3, 'horizontal'));
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps[0].snapshot.active).toBeNull();
+    expect(steps[1].snapshot.active).not.toBeNull();
+    // The two snapshots share the same board: the spawn step changes
+    // active and preview, not the cells.
+    expect(steps[1].snapshot.board).toBe(steps[0].snapshot.board);
   });
 
   it('does not mutate the prior board', () => {
@@ -349,9 +377,9 @@ describe('applyInput / drop', () => {
     expect(board[1][3]).toEqual({ kind: 'empty' });
   });
 
-  it('passes the RNG through unchanged', () => {
+  it('advances the RNG when drawing the new preview', () => {
     const state = makeState(pair(3, 'horizontal'));
     const [, , rng] = applyInput(state, { kind: 'drop' }, RNG);
-    expect(rng).toBe(RNG);
+    expect(rng).not.toEqual(RNG);
   });
 });

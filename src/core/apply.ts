@@ -1,9 +1,11 @@
 // Pure transition function for the core: `(state, input, rng) →
-// (state', steps, rng')`. Currently handles `shift`, `rotate`, and
-// the landing portion of `drop`. The cascade that should follow a
-// drop (reactions, gravity, scoring, lose check, next-pair spawn)
-// will land alongside the cascade simulator.
+// (state', steps, rng')`. Currently handles `shift`, `rotate`, the
+// landing portion of `drop`, and the post-drop spawn that promotes
+// the preview to active. The cascade that should sit between landing
+// and spawn (reactions, gravity, scoring, lose check) will land
+// alongside the cascade simulator.
 
+import { pieceToActive, samplePiece } from './spawn';
 import type { ActivePiece, Board, Cell, Input, State, Step } from './state';
 import type { Rng } from './rng';
 
@@ -107,17 +109,25 @@ function drop(
     state.board,
     active,
   );
-  const next: State = { ...state, board, active: null };
-  return [
-    next,
-    [
-      {
-        event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
-        snapshot: next,
-      },
-    ],
-    rng,
-  ];
+  const afterLand: State = { ...state, board, active: null };
+  const landStep: Step = {
+    event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
+    snapshot: afterLand,
+  };
+  // Preview slides to active and a fresh piece is drawn for the
+  // preview, against the post-land board. Spec sequencing
+  // (03-spawning.md "Sequencing relative to the cascade") draws
+  // against the post-cascade board; until cascades land that's the
+  // post-land board.
+  const [newPreview, nextRng] = samplePiece(board, rng);
+  const afterSpawn: State = {
+    board,
+    active: pieceToActive(state.preview),
+    preview: newPreview,
+    score: state.score,
+  };
+  const spawnStep: Step = { event: { kind: 'spawn' }, snapshot: afterSpawn };
+  return [afterSpawn, [landStep, spawnStep], nextRng];
 }
 
 // Each half falls independently to the lowest empty cell in its

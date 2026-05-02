@@ -12,6 +12,11 @@ export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 // drop-fall animation read it from here.
 export const SPAWN_ROW = 9;
 
+// Anchor column for a freshly spawned piece. Spec column 4 (1-indexed)
+// is code column 3. A horizontal pair anchored here spans the spawn
+// position columns 4–5; solo items sit at column 4.
+export const SPAWN_COLUMN = 3;
+
 // 0-indexed grid position. Row 0 is the floor; column 0 is the left wall.
 export type Pos = { readonly row: number; readonly column: number };
 

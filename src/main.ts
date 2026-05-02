@@ -1,7 +1,6 @@
 import './style.css';
 import { createDriver } from './animation/driver';
 import { loadSprites } from './assets/sprite-loader';
-import { createInitialState } from './core/initial-state';
 import { attachKeyboard } from './input/keyboard';
 import { createRenderer } from './renderer/playfield';
 import { createStore } from './store';
@@ -25,7 +24,7 @@ async function main(): Promise<void> {
   const scoreEl = requireElement('score', HTMLElement);
 
   const sprites = await loadSprites();
-  const store = createStore(createInitialState(), RNG_SEED);
+  const store = createStore(RNG_SEED);
   const driver = createDriver(store);
   const renderer = createRenderer({
     canvas,

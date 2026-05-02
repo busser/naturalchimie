@@ -3,6 +3,36 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Wired up spawn
+
+Added `src/core/spawn.ts` with `computePool(board)` and
+`samplePiece(board, rng)` matching `03-spawning.md`: the pool is
+`{1..min(11, max(2, highest_tier))}` derived from the board with no
+stored state, the special-item kind roll only happens at ≥20 occupied
+playfield cells, and weighted tier sampling uses `weight(t) =
+max_tier - t + 1`. Tier 12 is excluded from the pool by the upper
+clamp; the threshold counts the playfield only, not the overflow
+rows.
+
+`drop` in `apply.ts` now emits two steps: the existing `pair-land`,
+then a new `spawn` step that promotes the preview to active (at
+`SPAWN_COLUMN = 3`, horizontal for pairs) and draws a fresh preview
+against the post-land board. The spec sequencing draws against the
+post-cascade board; until cascades land that's the post-land board,
+which composes correctly when the cascade simulator slots in between.
+`pieceToActive` lives in `spawn.ts` and is shared with
+`createInitialState`, which now draws both the initial active and
+preview from the same code path.
+
+`createStore` builds the initial state itself from the seeded RNG
+rather than receiving it pre-built — the alternative would have been
+two ways to fill the active/preview slots, and the spawn-flow code
+path is the one source of truth. `main.ts` follows.
+
+The `spawn` step's duration in the driver is still 0, so visually the
+new pair pops in after the fall completes. The slide-from-preview
+animation belongs to a later pass on the preview slot UI.
+
 ## 2026-05-02 — Animated the drop fall on ArrowDown
 
 Wired `ArrowDown` to the core's `drop` input and gave the `pair-land`

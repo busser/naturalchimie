@@ -6,6 +6,7 @@
 // behavior in 05-animations.md.
 
 import { applyInput } from '../core/apply';
+import { createInitialState } from '../core/initial-state';
 import { createRng, type Rng } from '../core/rng';
 import type { Input, State, Step } from '../core/state';
 
@@ -22,9 +23,10 @@ export type Store = {
   dispatch(input: Input): void;
 };
 
-export function createStore(initial: State, seed: number): Store {
+export function createStore(seed: number): Store {
+  const [initial, initialRng] = createInitialState(createRng(seed));
   let committed = initial;
-  let rng: Rng = createRng(seed);
+  let rng: Rng = initialRng;
   const inputQueue: Input[] = [];
   const stepQueue: Step[] = [];
 
