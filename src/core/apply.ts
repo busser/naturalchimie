@@ -1,8 +1,10 @@
 // Pure transition function for the core: `(state, input, rng) →
-// (state', steps, rng')`. Currently handles `shift` and `rotate`.
-// `drop` will land alongside the cascade simulator.
+// (state', steps, rng')`. Currently handles `shift`, `rotate`, and
+// the landing portion of `drop`. The cascade that should follow a
+// drop (reactions, gravity, scoring, lose check, next-pair spawn)
+// will land alongside the cascade simulator.
 
-import type { ActivePiece, Input, State, Step } from './state';
+import type { ActivePiece, Board, Cell, Input, State, Step } from './state';
 import type { Rng } from './rng';
 
 const COLUMN_MIN = 0;
@@ -21,7 +23,7 @@ export function applyInput(
     case 'rotate':
       return rotate(state, active, rng);
     case 'drop':
-      throw new Error('applyInput: drop is not yet implemented');
+      return drop(state, active, rng);
   }
 }
 
@@ -91,4 +93,49 @@ function rotate(
     },
   };
   return [next, [{ event: { kind: 'pair-rotate' }, snapshot: next }], rng];
+}
+
+function drop(
+  state: State,
+  active: ActivePiece,
+  rng: Rng,
+): [State, Step[], Rng] {
+  if (active.kind !== 'pair') {
+    throw new Error('drop: solo items not yet implemented');
+  }
+  const board = landPair(state.board, active);
+  const next: State = { ...state, board, active: null };
+  return [next, [{ event: { kind: 'pair-land' }, snapshot: next }], rng];
+}
+
+// Each half falls independently to the lowest empty cell in its
+// column. For a vertical pair both halves share a column; placing
+// the bottom (`first`) before the top (`second`) means the second
+// call's "lowest empty" is the row above the first, which is what
+// we want.
+function landPair(
+  board: Board,
+  pair: Extract<ActivePiece, { kind: 'pair' }>,
+): Board {
+  const next: Cell[][] = board.map((row) => [...row]);
+  const firstColumn = pair.column;
+  const secondColumn =
+    pair.orientation === 'horizontal' ? pair.column + 1 : pair.column;
+  placeFalling(next, firstColumn, { kind: 'element', tier: pair.first });
+  placeFalling(next, secondColumn, { kind: 'element', tier: pair.second });
+  return next;
+}
+
+function placeFalling(
+  board: Cell[][],
+  column: number,
+  cell: Cell,
+): void {
+  for (let row = 0; row < board.length; row++) {
+    if (board[row][column].kind === 'empty') {
+      board[row][column] = cell;
+      return;
+    }
+  }
+  throw new Error(`drop: column ${column} has no empty cell`);
 }

@@ -3,6 +3,32 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Landed the pair on drop
+
+Replaced the `drop` stub in `applyInput` with the landing portion of
+the drop sequence: each half of the active pair falls independently
+to the lowest empty cell in its column, the active piece clears, and
+a single `pair-land` step is emitted. For a vertical pair both
+halves share a column, so placing `first` (bottom) before `second`
+(top) lets the second call's "lowest empty" naturally resolve to the
+row above the first — no special-case for orientation in the inner
+loop. The board copy is shallow-per-row to keep the prior snapshot
+intact, since the store and renderer still read it during the
+animation.
+
+The cascade that should follow a drop (reactions, between-step
+gravity, scoring, lose check, preview→active spawn) is still
+unimplemented and lives behind the cascade simulator. Solo items
+(dynamite, detonator) still throw on drop because their post-land
+behavior is reactions territory. The driver's `pair-land` duration
+remains 0, so dropping snaps visually until the fall and settle
+tweens land.
+
+Tests cover empty-board horizontal and vertical drops, partially
+filled columns (acceptance 1.3), asymmetric column heights
+(acceptance 1.4), active clearing, prior-board immutability, and
+RNG passthrough.
+
 ## 2026-05-02 — Sharpened sprite downscaling
 
 Sprites looked pixelated on the playfield. The source PNGs are

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyInput } from './apply';
+import { parseBoard } from './board-text';
 import { createRng } from './rng';
 import type {
   ActivePiece,
@@ -17,8 +18,8 @@ const EMPTY_BOARD: Board = Array.from({ length: 9 }, () =>
 const DUMMY_PREVIEW: Piece = { kind: 'pair', first: 1, second: 1 };
 const RNG = createRng(42);
 
-function makeState(active: ActivePiece | null): State {
-  return { board: EMPTY_BOARD, active, preview: DUMMY_PREVIEW, score: 0 };
+function makeState(active: ActivePiece | null, board: Board = EMPTY_BOARD): State {
+  return { board, active, preview: DUMMY_PREVIEW, score: 0 };
 }
 
 function pair(
@@ -233,6 +234,99 @@ describe('applyInput / rotate', () => {
   it('passes the RNG through unchanged', () => {
     const state = makeState(pair(3, 'horizontal'));
     const [, , rng] = applyInput(state, { kind: 'rotate' }, RNG);
+    expect(rng).toBe(RNG);
+  });
+});
+
+describe('applyInput / drop', () => {
+  it('lands a horizontal pair on an empty board', () => {
+    // Horizontal [1/2] at code column 3 (spec column 4) lands on the
+    // floor with first in column 3 and second in column 4.
+    const state = makeState(pair(3, 'horizontal', 1, 2));
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.active).toBeNull();
+    expect(next.board[0][3]).toEqual({ kind: 'element', tier: 1 });
+    expect(next.board[0][4]).toEqual({ kind: 'element', tier: 2 });
+    expect(steps).toHaveLength(1);
+    expect(steps[0].event.kind).toBe('pair-land');
+    expect(steps[0].snapshot).toBe(next);
+  });
+
+  it('stacks a vertical pair on an empty column with the bottom (first) at the floor', () => {
+    // Vertical pair, first=2 (bottom), second=1 (top): bottom lands
+    // at row 0, top at row 1, both in column 3.
+    const state = makeState(pair(3, 'vertical', 2, 1));
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[0][3]).toEqual({ kind: 'element', tier: 2 });
+    expect(next.board[1][3]).toEqual({ kind: 'element', tier: 1 });
+  });
+
+  it('stacks a vertical pair on top of existing elements', () => {
+    // Acceptance test 1.3 — column 3 (spec col 4) has two tier-5s.
+    // Drop vertical (top=1, bottom=2): bottom lands at row 2, top at row 3.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'vertical', 2, 1), board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[2][3]).toEqual({ kind: 'element', tier: 2 });
+    expect(next.board[3][3]).toEqual({ kind: 'element', tier: 1 });
+  });
+
+  it('lands each half of a horizontal pair independently in its own column', () => {
+    // Acceptance test 1.4 — column 3 has rows 0, 1 filled; column 4
+    // has row 0 filled. Horizontal [1/2] lands tier 1 at (row 2, col 3)
+    // and tier 2 at (row 1, col 4).
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+      . . . 7 5 . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[2][3]).toEqual({ kind: 'element', tier: 1 });
+    expect(next.board[1][4]).toEqual({ kind: 'element', tier: 2 });
+    // Pre-existing elements are untouched.
+    expect(next.board[0][3]).toEqual({ kind: 'element', tier: 7 });
+    expect(next.board[1][3]).toEqual({ kind: 'element', tier: 5 });
+    expect(next.board[0][4]).toEqual({ kind: 'element', tier: 5 });
+  });
+
+  it('clears the active piece', () => {
+    const state = makeState(pair(3, 'horizontal'));
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.active).toBeNull();
+  });
+
+  it('does not mutate the prior board', () => {
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    applyInput(state, { kind: 'drop' }, RNG);
+    expect(board[0][3]).toEqual({ kind: 'element', tier: 5 });
+    expect(board[1][3]).toEqual({ kind: 'empty' });
+  });
+
+  it('passes the RNG through unchanged', () => {
+    const state = makeState(pair(3, 'horizontal'));
+    const [, , rng] = applyInput(state, { kind: 'drop' }, RNG);
     expect(rng).toBe(RNG);
   });
 });
