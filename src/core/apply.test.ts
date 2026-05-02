@@ -442,3 +442,122 @@ describe('applyInput / drop', () => {
     });
   });
 });
+
+describe('applyInput / drop / lose condition', () => {
+  it('emits a game-over step when a half lands in the overflow zone', () => {
+    // Column 3 is full to the brim of the playfield (rows 0–6). The
+    // horizontal pair drops its left half on top, landing at row 7
+    // — the overflow zone. The right half lands cleanly at row 0
+    // of the empty column 4, but a single half in row 7 is enough
+    // to lose.
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps).toHaveLength(2);
+    expect(steps[0].event.kind).toBe('pair-land');
+    expect(steps[1].event).toEqual({ kind: 'game-over' });
+    // The game-over snapshot mirrors the post-land state: same board,
+    // no active piece.
+    expect(steps[1].snapshot).toBe(next);
+    expect(next.board[7][3]).toEqual({ kind: 'element', tier: 1 });
+    expect(next.active).toBeNull();
+  });
+
+  it('emits game-over when the top of a vertical pair lands in row 7', () => {
+    // Column 3 has 6 elements (rows 0–5). A vertical pair lands its
+    // bottom at row 6 (still playfield) and its top at row 7
+    // (overflow). Top half alone is enough to trigger the loss.
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'vertical', 1, 2), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps[1].event).toEqual({ kind: 'game-over' });
+  });
+
+  it('does not trigger game-over when the pair just fits in the playfield', () => {
+    // Column 3 has 5 elements (rows 0–4). A vertical pair fills rows
+    // 5 and 6 — the topmost playfield row. Nothing in the overflow
+    // zone, so the game continues.
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'vertical', 1, 2), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps[1].event.kind).toBe('spawn');
+  });
+
+  it('preserves the preview and the RNG on game-over', () => {
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const [next, , rng] = applyInput(state, { kind: 'drop' }, RNG);
+    // No new preview drawn, so the RNG is untouched and the preview
+    // carries forward from the prior state.
+    expect(rng).toBe(RNG);
+    expect(next.preview).toBe(DUMMY_PREVIEW);
+  });
+
+  it('locks input after game-over (no active piece to act on)', () => {
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const [afterDrop] = applyInput(state, { kind: 'drop' }, RNG);
+    const [afterShift, shiftSteps] = applyInput(
+      afterDrop,
+      { kind: 'shift', direction: 'left' },
+      RNG,
+    );
+    expect(afterShift).toBe(afterDrop);
+    expect(shiftSteps).toEqual([]);
+  });
+
+  it('triggers on a detonator landing in the overflow zone', () => {
+    // Column 3 has 7 elements (rows 0–6). Dropping a detonator
+    // places it at row 7, which is the overflow zone — game over.
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState({ kind: 'detonator', column: 3 }, board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps[1].event).toEqual({ kind: 'game-over' });
+    expect(next.board[7][3]).toEqual({ kind: 'detonator' });
+  });
+});

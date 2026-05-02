@@ -11,6 +11,10 @@ import type { Rng } from './rng';
 
 const COLUMN_MIN = 0;
 const COLUMN_MAX = 6;
+// Rows 0–6 are the playfield; rows 7–8 are the overflow zone. An
+// element resting in the overflow zone on a stable board means the
+// round is lost.
+const OVERFLOW_ROW_MIN = 7;
 
 export function applyInput(
   state: State,
@@ -105,6 +109,18 @@ function drop(
   const { board, landStep } = landActive(state, active);
   const afterLand: State = { ...state, board, active: null };
   const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
+  // Lose check runs against the stable board. With no cascade
+  // simulator yet, the post-land board is the stable point: if any
+  // cell sits in the overflow zone, the round ends. No new preview
+  // is drawn (the RNG stays put) and no piece is promoted — the
+  // game-over step's snapshot mirrors the post-land state.
+  if (isLost(board)) {
+    const gameOverStep: Step = {
+      event: { kind: 'game-over' },
+      snapshot: afterLand,
+    };
+    return [afterLand, [landStepWithSnapshot, gameOverStep], rng];
+  }
   // Preview slides to active and a fresh piece is drawn for the
   // preview, against the post-land board. Spec sequencing
   // (03-spawning.md "Sequencing relative to the cascade") draws
@@ -119,6 +135,15 @@ function drop(
   };
   const spawnStep: Step = { event: { kind: 'spawn' }, snapshot: afterSpawn };
   return [afterSpawn, [landStepWithSnapshot, spawnStep], nextRng];
+}
+
+function isLost(board: Board): boolean {
+  for (let row = OVERFLOW_ROW_MIN; row < board.length; row++) {
+    for (let column = 0; column < board[row].length; column++) {
+      if (board[row][column].kind !== 'empty') return true;
+    }
+  }
+  return false;
 }
 
 type LandStepDraft = { board: Board; landStep: Omit<Step, 'snapshot'> };

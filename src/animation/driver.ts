@@ -87,6 +87,7 @@ function stepDuration(step: Step): number {
     case 'detonate':
     case 'dynamite-blast':
     case 'spawn':
+    case 'game-over':
       // Durations land alongside each step's implementation.
       return 0;
   }

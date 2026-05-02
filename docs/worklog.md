@@ -3,6 +3,32 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Implemented the lose condition in the core
+
+Added the lose check to `applyInput`'s drop branch. After a piece
+lands, the core scans the overflow zone (rows 7–8, the two rows
+above the playfield); if any cell there is non-empty, it emits a
+terminal `game-over` step in place of the usual `spawn`. The
+game-over snapshot mirrors the post-land state — `active: null`,
+preview unchanged, score unchanged — and the RNG is not advanced
+because no fresh preview is drawn. Subsequent inputs are no-ops
+because `applyInput` already short-circuits when `active === null`.
+
+The check sits at the post-land board, which is the current
+"stable" point. Once the cascade simulator lands, the same hook
+moves to the end of the cascade — that's where the spec wants it
+("on the stable board after a cascade"). For now there are no
+reactions, so post-land is post-stable. Acceptance test 5.3
+(reaction prevents loss) is therefore unreachable until cascades
+exist; tests cover the post-land variants the current code can
+produce: asymmetric overflow from a horizontal pair, top-half
+overflow from a vertical pair, the just-fits non-loss boundary,
+preview/RNG preservation on game-over, post-game-over input
+lockout, and detonator overflow.
+
+The `game-over` step has duration 0 in the driver. The fade
+overlay described in `05-animations.md` belongs to a later pass.
+
 ## 2026-05-02 — Fixed asymmetric pair-fall speed
 
 When a horizontal pair landed on columns of different heights, the

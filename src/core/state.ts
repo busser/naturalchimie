@@ -110,4 +110,5 @@ export type StepEvent =
   | { readonly kind: "gravity" }
   | { readonly kind: "detonate" }
   | { readonly kind: "dynamite-blast" }
-  | { readonly kind: "spawn" };
+  | { readonly kind: "spawn" }
+  | { readonly kind: "game-over" };
