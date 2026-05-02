@@ -3,6 +3,55 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Animated cascade reactions and gravity
+
+Cascades had been resolving instantly: merge and gravity steps both
+committed in 0 ms, so a drop snapped through reactions without any
+visual continuity. Added `src/renderer/effects.ts`, a module that
+owns the cascade-stage visuals, and gave both step kinds real
+durations in the driver. The playfield asks the module for an
+`Effect` whenever a new merge or gravity step enters flight,
+excludes the effect's `skipCells` from its normal board pass, and
+calls `effect.draw` on top.
+
+Gravity is the simple half. Each `Movement` lerps from `from` to
+`to` with ease-in over `50 ms × maxFallDistance`, plus an 80 ms
+inter-cascade pause padded onto the end of the step so the eye gets
+a beat before the next reaction fires. The renderer reads the
+source cell out of `prevSnapshot.board` and draws it at the
+interpolated row; the `skipCells` set keeps the playfield's static
+pass from also drawing it at its `from` position.
+
+The merge took several iterations to land. The straight
+white-bloom-then-orbs-converge approach from the spec played flat:
+synchronized convergence read more like teleportation than
+transformation. A second pass had each cell explode into a swarm of
+sub-orbs that scattered with overshoot and snapped inward — kinetic
+but visually busy.
+
+The version that stuck is shaped around a clearer narrative. Each
+cell shines (original sprite plus a growing white halo, like
+filling with energy), then pops, releasing four bubbles of light.
+Each bubble travels to the group's landing cell along a quadratic
+Bezier curve with the control point pushed out in the bubble's
+scatter direction, so the path bulges outward and curves back
+inward. Per-bubble travel times are randomized in a 200–340 ms
+window, so arrivals at landing stagger; a central orb at landing
+grows in discrete bumps as each absorbed bubble registers, with a
+brief pulse on each arrival. When the last bubble lands, the orb
+swells over 70 ms and snaps off, revealing the new tier sprite at
+full size.
+
+Two implementation notes worth keeping. The bubble timing function
+is a biphasic ease-out-in blended 70/30 with linear: the pure
+biphasic curve (fast-out, slow-at-apex, fast-pull-in) has zero
+velocity at the midpoint and reads as a freeze frame when the
+bubble pauses at the arc apex, so the linear term keeps the apex
+visibly slow without stopping. And the central orb's radius scales
+with `sqrt(arrivedCount)` rather than linearly: a 3-cell merge has
+12 bubbles, a 5-cell has 20, and linear growth blew the orb past
+the size of a full cell before the pop.
+
 ## 2026-05-03 — Implemented reactions, gravity, and cascades
 
 Until now elements just stacked. Dropping a piece landed it and

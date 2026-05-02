@@ -23,6 +23,7 @@ import {
   drawSpriteAtCell,
   type SpriteAsset,
 } from '../assets/sprite-renderer';
+import { cellKey, createEffect, type Effect } from './effects';
 
 const BOARD_WIDTH = 7;
 const VISIBLE_ROWS = 12;
@@ -65,10 +66,24 @@ export function createRenderer(deps: RendererDeps): Renderer {
   const cssHeight = VISIBLE_ROWS * cellSize;
   const ctx = setupCanvas(canvas, cssWidth, cssHeight);
 
+  // Effects (merge bloom, gravity tween) are step-scoped: built when
+  // a new merge/gravity step enters flight, dropped when it commits.
+  // The driver creates one Step instance per step, so reference
+  // identity is enough to detect transitions.
+  let effect: Effect | null = null;
+  let effectStep: Step | null = null;
+
   return {
     draw(now: number) {
       const state = getSnapshot();
       const inflight = getInFlight(now);
+      if (inflight === null) {
+        effect = null;
+        effectStep = null;
+      } else if (inflight.step !== effectStep) {
+        effect = createEffect(inflight.step, now);
+        effectStep = inflight.step;
+      }
       ctx.clearRect(0, 0, cssWidth, cssHeight);
       drawLoseThreshold(ctx, cellSize, cssWidth, cssHeight);
       // Collect board cells and active halves into one list and sort
@@ -76,11 +91,21 @@ export function createRenderer(deps: RendererDeps): Renderer {
       // 04-visual-style.md ("Element sprites"). Drawing the active
       // pile separately put a falling pair in front of board cells
       // below it on the way down, then snapped behind them on commit.
-      const items = collectBoardItems(state.board, sprites);
+      const items = collectBoardItems(state.board, sprites, effect?.skipCells);
       items.push(...activeHalves(state, inflight, sprites));
       items.sort((a, b) => b.row - a.row);
       for (const item of items) {
         drawAt(ctx, item.sprite, item.col, item.row, cellSize, cssHeight);
+      }
+      if (effect !== null && inflight !== null) {
+        effect.draw(
+          ctx,
+          now,
+          inflight.prevSnapshot,
+          sprites,
+          cellSize,
+          cssHeight,
+        );
       }
     },
   };
@@ -121,12 +146,17 @@ function drawLoseThreshold(
   ctx.restore();
 }
 
-function collectBoardItems(board: Board, sprites: SpriteAtlas): RenderHalf[] {
+function collectBoardItems(
+  board: Board,
+  sprites: SpriteAtlas,
+  skipCells: ReadonlySet<string> | undefined,
+): RenderHalf[] {
   const items: RenderHalf[] = [];
   for (let r = 0; r < board.length; r++) {
     for (let c = 0; c < board[r].length; c++) {
       const cell = board[r][c];
       if (cell.kind === 'empty') continue;
+      if (skipCells !== undefined && skipCells.has(cellKey(r, c))) continue;
       items.push({ sprite: assetForCell(cell, sprites), col: c, row: r });
     }
   }

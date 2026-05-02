@@ -13,6 +13,20 @@ const ROTATE_DURATION_MS = 200;
 // fall at the same rate; the slower half (longer drop) sets the step's
 // total duration.
 const FALL_MS_PER_CELL = 50;
+// 05-animations.md gives 200 ms (white bloom) + 150 ms (new element
+// fade-in) as starting values. The renderer's effects.ts uses this
+// budget for shine (~100 ms) + bubble travel (~340 ms peak) + pop
+// (~70 ms): each cell shines, pops into bubbles of light, those
+// converge and merge into a growing central orb that pops to reveal
+// the new tier sprite. See effects.ts for the timeline.
+export const MERGE_DURATION_MS = 510;
+// Per 05-animations.md "Gravity fall": 50 ms per cell of fall
+// distance, all columns animating in parallel. The 80 ms
+// "inter-cascade pause" lives at the end of the gravity step — the
+// renderer clamps the fall tween at t=1 and the residual time is a
+// dead beat for the eye to catch up before the next merge fires.
+export const GRAVITY_MS_PER_CELL = 50;
+export const INTER_CASCADE_PAUSE_MS = 80;
 // Per 05-animations.md "Preview window animation", reshaped for our
 // sidebar-on-the-left layout: prev preview slides out of the preview
 // recess, then the new active slides into the spawn row, then the new
@@ -105,7 +119,15 @@ function stepDuration(step: Step): number {
     case 'spawn':
       return SPAWN_DURATION_MS;
     case 'merge':
-    case 'gravity':
+      return MERGE_DURATION_MS;
+    case 'gravity': {
+      let maxDistance = 0;
+      for (const m of step.event.movements) {
+        const distance = m.from.row - m.to.row;
+        if (distance > maxDistance) maxDistance = distance;
+      }
+      return GRAVITY_MS_PER_CELL * maxDistance + INTER_CASCADE_PAUSE_MS;
+    }
     case 'detonate':
     case 'dynamite-blast':
     case 'game-over':
