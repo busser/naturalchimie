@@ -3,6 +3,22 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Closed animation API and main-wiring open questions
+
+Animation layer settled as a single `requestAnimationFrame` driver,
+with hand-rolled tweens. No tween library: the surface is shift,
+rotate, fall, fade, scale — a few `lerp` calls per kind. Per-step
+Promises were the alternative and were rejected because they
+scatter the "commit on completion, not start" rule across step
+kinds, while a central driver concentrates it in one place.
+
+Wiring follows the same shape: input dispatches to the store, the
+store calls `applyInput` and queues steps without committing, the
+driver pulls one step at a time and triggers the commit on
+completion. The store therefore never advances `currentSnapshot`
+itself — that is exclusively the driver's job, which keeps the
+"commit on completion" guarantee load-bearing in a single place.
+
 ## 2026-04-27 — Implemented shift and rotate
 
 Landed `src/core/apply.ts` with the unified entry point

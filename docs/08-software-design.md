@@ -355,14 +355,50 @@ discriminator only. Each event's payload is filled in alongside
 the implementation of the step that produces it, so we don't
 speculate about what an animation needs before writing it.
 
-## Open questions
+## Animation layer
 
-- **Animation layer API.** The step shape is settled, but how
-  the animation layer is driven isn't. Per-step promise vs. a
-  central `requestAnimationFrame` driver; tween library vs.
-  hand-rolled interpolation. Touches every step kind, so worth
-  deciding before the first step is implemented.
-- **Layer wiring in `main.ts`.** How the input layer dispatches
-  to the store, how the store invokes core, and how the
-  animation queue is fed and drained. Currently only described
-  abstractly under "Logic and animation sequencing."
+A single `requestAnimationFrame` driver owns playback. The
+store exposes `currentSnapshot` and a queue of pending steps;
+the driver pulls the queue head, plays it for the step's
+duration, and on completion calls back into the store to
+commit `currentSnapshot = step.snapshot` and advance the
+queue. The renderer subscribes to the store and asks the
+driver, each frame, for any in-flight visual override —
+returned as an interpolation between `currentSnapshot` (still
+the *prior* committed state during playback) and the head
+step's snapshot.
+
+Tweens are hand-rolled. Each step kind owns a small
+`playback(prev, next, progress)` function that returns the
+visual override for that frame; the driver supplies
+`progress = elapsed / duration` clamped to `[0, 1]` and an
+ease curve. No tween dependency: the entire surface is shift,
+rotate, fall, fade, scale — a few lines of `lerp` per kind.
+
+Advancing on completion (not start) is what guarantees the
+renderer never shows post-step results before the visual
+plays. The store's commit is therefore driver-triggered, not
+core-triggered.
+
+## Layer wiring in `main.ts`
+
+The startup sequence:
+
+1. Create the store with an initial `State` and a seeded RNG.
+2. Create the animation driver, bound to the store.
+3. Create the renderer, bound to the store and driver.
+4. Create the input layer, which dispatches `Input` actions to
+   the store on `keydown`.
+5. Start the driver's `requestAnimationFrame` loop.
+
+The dispatch flow on a key press:
+
+`input → store.dispatch(input) → applyInput(currentSnapshot,
+input, rng) → store appends steps to its queue (no commit
+yet) → driver picks up the head step on the next frame →
+driver plays it → on completion, driver tells the store to
+commit the snapshot and pop the queue.`
+
+The store therefore never advances `currentSnapshot` itself;
+that's the driver's job. This keeps the "commit on
+completion" rule in one place.
