@@ -7,7 +7,7 @@
 
 import { applyInput } from '../core/apply';
 import { createInitialState } from '../core/initial-state';
-import { createRng, type Rng } from '../core/rng';
+import { createRng } from '../core/rng';
 import type { Input, State, Step } from '../core/state';
 
 export type Store = {
@@ -21,12 +21,13 @@ export type Store = {
   commitNextStep(): void;
   // Input layer calls dispatch on every fresh keydown.
   dispatch(input: Input): void;
+  // Discards the current run and starts fresh from `seed`. Pending
+  // inputs and pending steps are dropped so the new run starts clean.
+  restart(seed: number): void;
 };
 
 export function createStore(seed: number): Store {
-  const [initial, initialRng] = createInitialState(createRng(seed));
-  let committed = initial;
-  let rng: Rng = initialRng;
+  let [committed, rng] = createInitialState(createRng(seed));
   const inputQueue: Input[] = [];
   const stepQueue: Step[] = [];
 
@@ -52,6 +53,11 @@ export function createStore(seed: number): Store {
     },
     dispatch: (input) => {
       inputQueue.push(input);
+    },
+    restart: (newSeed) => {
+      [committed, rng] = createInitialState(createRng(newSeed));
+      inputQueue.length = 0;
+      stepQueue.length = 0;
     },
   };
 }

@@ -23,6 +23,7 @@ export type InFlight = {
 export type Driver = {
   tick(now: number): void;
   getInFlight(now: number): InFlight | null;
+  reset(): void;
 };
 
 type Current = {
@@ -60,7 +61,13 @@ export function createDriver(store: Store): Driver {
     return { step: current.step, prevSnapshot: current.prevSnapshot, t };
   }
 
-  return { tick, getInFlight };
+  return {
+    tick,
+    getInFlight,
+    reset: () => {
+      current = null;
+    },
+  };
 }
 
 function stepDuration(step: Step): number {

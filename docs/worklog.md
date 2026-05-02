@@ -3,6 +3,33 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Added the game-over UI
+
+The core was emitting `game-over` steps but nothing in the UI
+acknowledged it. Added a DOM overlay over the playfield: a dim
+half-transparent layer plus a parchment-colored panel carrying
+"Game Over", the final score, and "Press space to play again."
+The panel matches the sidebar's parchment palette so the deep-brown
+text reads cleanly. An earlier pass put the text directly on the
+darkened sky and the contrast was poor.
+
+`main.ts` derives the lose state from the snapshot (no flag on
+`State`, per `08-software-design.md`): `active === null` plus a
+non-empty cell in the overflow rows. When the frame loop sees the
+state flip, it reveals the overlay and updates the score readout.
+Space, listened for at the window, calls `store.restart(Date.now())`
+and `driver.reset()` to clear in-flight tween state. The store's
+new `restart(seed)` rebuilds initial state through
+`createInitialState` and drops queued inputs and steps.
+
+The overlay uses CSS opacity transition for the 600 ms fade-in.
+Two details to make it not flash on first paint: the markup
+ships with the `hidden` attribute so the UA stylesheet hides it
+before Vite injects the CSS module, and `.game-over[hidden]`
+overrides the `display: flex` rule so the attribute keeps winning.
+On entering game-over, JS removes `hidden` and adds `is-visible`
+on the next animation frame so the opacity transition still plays.
+
 ## 2026-05-02 — Implemented the lose condition in the core
 
 Added the lose check to `applyInput`'s drop branch. After a piece

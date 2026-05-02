@@ -13,6 +13,13 @@
       </aside>
       <main class="playfield">
         <canvas id="playfield-canvas"></canvas>
+        <div class="game-over" id="game-over" aria-hidden="true" hidden>
+          <div class="game-over__panel">
+            <div class="game-over__title">Game Over</div>
+            <div class="game-over__score" id="game-over-score">0</div>
+            <div class="game-over__hint">Press space to play again.</div>
+          </div>
+        </div>
       </main>
     </div>
     <script type="module" src="/src/main.ts"></script>

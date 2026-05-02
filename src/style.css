@@ -70,3 +70,59 @@ body {
 .playfield canvas {
   display: block;
 }
+
+.game-over {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 600ms ease-out;
+  pointer-events: none;
+}
+
+/* Browsers honor `hidden` via the UA stylesheet (display: none) before
+   our CSS loads, so the overlay stays invisible during FOUC. The class
+   sets `display: flex`, which would otherwise override `hidden`; this
+   selector is more specific so the attribute wins while it's set. */
+.game-over[hidden] {
+  display: none;
+}
+
+.game-over.is-visible {
+  opacity: 1;
+}
+
+.game-over__panel {
+  background: var(--parchment);
+  border: 2px solid var(--parchment-recess);
+  border-radius: 8px;
+  padding: 28px 48px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--score-ink);
+  text-align: center;
+}
+
+.game-over__title {
+  font-size: 56px;
+  font-weight: bold;
+  line-height: 1;
+  transform: rotate(-3deg);
+  letter-spacing: 2px;
+}
+
+.game-over__score {
+  font-size: 32px;
+  font-weight: bold;
+}
+
+.game-over__hint {
+  font-size: 14px;
+  opacity: 0.85;
+}
