@@ -23,8 +23,7 @@ const SPAWN_ROW = 9;
 const LOSE_THRESHOLD_ROW = 7;
 
 export type Renderer = {
-  start(): void;
-  stop(): void;
+  draw(): void;
 };
 
 export type RendererDeps = {
@@ -40,23 +39,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
   const cssHeight = VISIBLE_ROWS * cellSize;
   const ctx = setupCanvas(canvas, cssWidth, cssHeight);
 
-  let raf = 0;
-  let running = false;
-
-  function frame(): void {
-    drawFrame(ctx, getSnapshot(), sprites, cellSize, cssWidth, cssHeight);
-    if (running) raf = requestAnimationFrame(frame);
-  }
-
   return {
-    start() {
-      if (running) return;
-      running = true;
-      raf = requestAnimationFrame(frame);
-    },
-    stop() {
-      running = false;
-      cancelAnimationFrame(raf);
+    draw() {
+      drawFrame(ctx, getSnapshot(), sprites, cellSize, cssWidth, cssHeight);
     },
   };
 }
