@@ -3,6 +3,29 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Computed and displayed the score
+
+The sidebar score has been pinned at 0 since the initial scaffolding.
+Added `src/core/score.ts` with `computeScore(board)`: sum of
+`3^(tier - 1)` over playfield cells (rows 0–6), excluding the
+overflow zone, the active piece, and detonator cells (no tier).
+
+`apply.ts`'s drop branch now sets `score: computeScore(board)` on the
+pair-land snapshot in the non-lost path, and carries that value
+through to the spawn snapshot. The pair-land snapshot is the first
+commit on a stable board, so the score updates the instant the player
+sees the piece come to rest. Game-over keeps the prior score per spec
+("if the round did not end, the score is recomputed"). When the
+cascade simulator lands, the same hook moves to the post-cascade
+snapshot — same role, later trigger — but the score's only consumer
+is the snapshot, so no other layers care.
+
+Tests cover the formula directly (empty board, single tier-1, the
+1.1 and 1.3 acceptance scenarios, the full 1–11 sum of 88573, gold
+nugget at 3^11, detonator excluded) plus three drop-level cases:
+`[1/2]` on empty scores 4, dropping into the two-tier-5 column scores
+166, and a detonator drop leaves the score at zero.
+
 ## 2026-05-02 — Stopped buffered drops from leaking across pairs
 
 Pressing down three times in quick succession — once with a pair on

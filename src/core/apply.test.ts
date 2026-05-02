@@ -443,6 +443,43 @@ describe('applyInput / drop', () => {
   });
 });
 
+describe('applyInput / drop / score', () => {
+  it('updates the score to 4 after a [1/2] horizontal drop on an empty board', () => {
+    // Acceptance test 1.1: tier-1 (=1) + tier-2 (=3) = 4.
+    const state = makeState(pair(3, 'horizontal', 1, 2));
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.score).toBe(4);
+    // The pair-land snapshot is the first commit on a stable board,
+    // so the score updates there. The spawn snapshot carries it
+    // forward unchanged.
+    expect(steps[0].snapshot.score).toBe(4);
+    expect(steps[1].snapshot.score).toBe(4);
+  });
+
+  it('matches acceptance test 1.3 — drop into a column of two tier-5s scores 166', () => {
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState(pair(3, 'vertical', 2, 1), board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.score).toBe(1 + 3 + 81 + 81);
+  });
+
+  it('keeps the score at zero after dropping a detonator (no element on the board)', () => {
+    // The detonator cell does not contribute to the score: only
+    // tier-bearing element cells do.
+    const state = makeState({ kind: 'detonator', column: 3 });
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.score).toBe(0);
+  });
+});
+
 describe('applyInput / drop / lose condition', () => {
   it('emits a game-over step when a half lands in the overflow zone', () => {
     // Column 3 is full to the brim of the playfield (rows 0–6). The
@@ -541,6 +578,30 @@ describe('applyInput / drop / lose condition', () => {
     );
     expect(afterShift).toBe(afterDrop);
     expect(shiftSteps).toEqual([]);
+  });
+
+  it('keeps the score at its prior value on game-over', () => {
+    // Column 3 is full of tier-5s; left-half lands in the overflow.
+    // Pre-existing score (carried in via state) should survive
+    // unchanged — the spec says score is recomputed only when the
+    // round did not end.
+    const board = parseBoard(`
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+      . . . 5 . . .
+    `);
+    const state: State = {
+      ...makeState(pair(3, 'horizontal', 1, 2), board),
+      score: 999,
+    };
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.score).toBe(999);
+    expect(steps[0].snapshot.score).toBe(999);
+    expect(steps[1].snapshot.score).toBe(999);
   });
 
   it('triggers on a detonator landing in the overflow zone', () => {

@@ -5,6 +5,7 @@
 // and spawn (reactions, gravity, scoring, lose check) will land
 // alongside the cascade simulator.
 
+import { computeScore } from './score';
 import { pieceToActive, samplePiece } from './spawn';
 import type { ActivePiece, Board, Cell, Input, State, Step } from './state';
 import type { Rng } from './rng';
@@ -107,20 +108,30 @@ function drop(
   rng: Rng,
 ): [State, Step[], Rng] {
   const { board, landStep } = landActive(state, active);
-  const afterLand: State = { ...state, board, active: null };
-  const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
   // Lose check runs against the stable board. With no cascade
   // simulator yet, the post-land board is the stable point: if any
   // cell sits in the overflow zone, the round ends. No new preview
   // is drawn (the RNG stays put) and no piece is promoted — the
-  // game-over step's snapshot mirrors the post-land state.
+  // game-over step's snapshot mirrors the post-land state. Score
+  // does not update on game-over per the spec ("if the round did
+  // not end, the score is recomputed"); the displayed score holds
+  // at its last stable value.
   if (isLost(board)) {
+    const afterLand: State = { ...state, board, active: null };
+    const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
     const gameOverStep: Step = {
       event: { kind: 'game-over' },
       snapshot: afterLand,
     };
     return [afterLand, [landStepWithSnapshot, gameOverStep], rng];
   }
+  // Stable-board score: the pair-land snapshot commits when the
+  // animation ends, which is the moment the player sees the board
+  // come to rest. When the cascade simulator lands, this hook moves
+  // to the end of the cascade — same role, later trigger.
+  const newScore = computeScore(board);
+  const afterLand: State = { ...state, board, active: null, score: newScore };
+  const landStepWithSnapshot: Step = { ...landStep, snapshot: afterLand };
   // Preview slides to active and a fresh piece is drawn for the
   // preview, against the post-land board. Spec sequencing
   // (03-spawning.md "Sequencing relative to the cascade") draws
@@ -131,7 +142,7 @@ function drop(
     board,
     active: pieceToActive(state.preview),
     preview: newPreview,
-    score: state.score,
+    score: newScore,
   };
   const spawnStep: Step = { event: { kind: 'spawn' }, snapshot: afterSpawn };
   return [afterSpawn, [landStepWithSnapshot, spawnStep], nextRng];
