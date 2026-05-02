@@ -8,7 +8,6 @@ import { createStore } from './store';
 import type { State } from './core/state';
 
 const CELL_SIZE = 48;
-const RNG_SEED = 1;
 // Rows 7–8 are the overflow zone; non-empty cells there on a stable
 // board mean the round is lost. The check matches `isLost` in the
 // core, but it lives here because the UI overlay is the only consumer.
@@ -43,7 +42,7 @@ async function main(): Promise<void> {
   const gameOverScoreEl = requireElement('game-over-score', HTMLElement);
 
   const sprites = await loadSprites();
-  const store = createStore(RNG_SEED);
+  const store = createStore(Date.now());
   const driver = createDriver(store);
   const renderer = createRenderer({
     canvas,
