@@ -248,8 +248,33 @@ describe('applyInput / drop', () => {
     expect(next.board[0][3]).toEqual({ kind: 'element', tier: 1 });
     expect(next.board[0][4]).toEqual({ kind: 'element', tier: 2 });
     expect(steps).toHaveLength(1);
-    expect(steps[0].event.kind).toBe('pair-land');
+    expect(steps[0].event).toEqual({
+      kind: 'pair-land',
+      firstLandingRow: 0,
+      secondLandingRow: 0,
+    });
     expect(steps[0].snapshot).toBe(next);
+  });
+
+  it('reports asymmetric landing rows in the step event', () => {
+    // Same setup as the asymmetric-column test below: column 3 has
+    // two cells filled, column 4 has one. Landing rows are 2 and 1.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+      . . . 7 5 . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 2), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps[0].event).toEqual({
+      kind: 'pair-land',
+      firstLandingRow: 2,
+      secondLandingRow: 1,
+    });
   });
 
   it('stacks a vertical pair on an empty column with the bottom (first) at the floor', () => {

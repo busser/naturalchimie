@@ -5,11 +5,13 @@
 // transparent.
 
 import type { InFlight } from '../animation/driver';
-import type {
-  ActivePiece,
-  Board,
-  State,
-  Tier,
+import {
+  SPAWN_ROW,
+  type ActivePiece,
+  type Board,
+  type State,
+  type Step,
+  type Tier,
 } from '../core/state';
 import type { SpriteAtlas } from '../assets/sprite-loader';
 import {
@@ -19,11 +21,6 @@ import {
 
 const BOARD_WIDTH = 7;
 const VISIBLE_ROWS = 12;
-
-// Code row 9 = spec row 10 = where the active piece sits in the
-// spawn area. The row is fixed for the piece's whole lifetime, per
-// 08-software-design.md ("State shape").
-const SPAWN_ROW = 9;
 
 // Spec calls for a soft separator between code row 6 (top of
 // playfield) and code row 7 (start of overflow zone) to mark the
@@ -159,16 +156,20 @@ function activeHalvesAtMoment(
 ): RenderHalf[] {
   if (inflight === null) return staticHalves(committedActive, sprites);
   const prev = inflight.prevSnapshot.active;
+  if (prev === null) return staticHalves(committedActive, sprites);
   const next = inflight.step.snapshot.active;
-  if (prev === null || next === null) {
-    return staticHalves(committedActive, sprites);
-  }
-  const easedT = easeOut(inflight.t);
   switch (inflight.step.event.kind) {
     case 'pair-shift':
-      return shiftHalves(prev, next, easedT, sprites);
+      if (next === null) return staticHalves(committedActive, sprites);
+      return shiftHalves(prev, next, easeOut(inflight.t), sprites);
     case 'pair-rotate':
-      return rotateHalves(prev, next, easedT, sprites);
+      if (next === null) return staticHalves(committedActive, sprites);
+      return rotateHalves(prev, next, easeOut(inflight.t), sprites);
+    case 'pair-land':
+      // pair-land's next snapshot has `active: null` by design — the
+      // piece is in the air during the fall and the board picks it up
+      // at commit. Render from the prev pair plus the step's payload.
+      return landHalves(prev, inflight.step, inflight.t, sprites);
     default:
       return staticHalves(committedActive, sprites);
   }
@@ -275,8 +276,49 @@ function pairMidpoint(active: ActivePiece): { col: number; row: number } {
     : { col: active.column, row: SPAWN_ROW };
 }
 
+// Each half falls in place at 50 ms/cell (driver-enforced via the
+// step's total duration). When the two halves' fall distances differ
+// the shorter half finishes first and then sits at its landing cell;
+// the per-half progress below scales raw `t` accordingly so both
+// halves move at the same on-screen speed regardless of distance.
+function landHalves(
+  prev: ActivePiece,
+  step: Step,
+  t: number,
+  sprites: SpriteAtlas,
+): RenderHalf[] {
+  if (prev.kind !== 'pair' || step.event.kind !== 'pair-land') {
+    return staticHalves(prev, sprites);
+  }
+  const fromHalves = staticHalves(prev, sprites);
+  const firstColumn = prev.column;
+  const secondColumn =
+    prev.orientation === 'horizontal' ? prev.column + 1 : prev.column;
+  const targets = [
+    { col: firstColumn, row: step.event.firstLandingRow },
+    { col: secondColumn, row: step.event.secondLandingRow },
+  ];
+  const distances = fromHalves.map((from, i) => from.row - targets[i].row);
+  const maxDistance = Math.max(...distances);
+  return fromHalves.map((from, i) => {
+    const ownDistance = distances[i];
+    const ownT =
+      ownDistance > 0 ? Math.min(1, (t * maxDistance) / ownDistance) : 1;
+    const eased = easeIn(ownT);
+    return {
+      sprite: from.sprite,
+      col: lerp(from.col, targets[i].col, eased),
+      row: lerp(from.row, targets[i].row, eased),
+    };
+  });
+}
+
 function easeOut(t: number): number {
   return 1 - (1 - t) * (1 - t);
+}
+
+function easeIn(t: number): number {
+  return t * t;
 }
 
 function lerp(a: number, b: number, t: number): number {

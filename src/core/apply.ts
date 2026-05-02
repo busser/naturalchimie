@@ -103,38 +103,57 @@ function drop(
   if (active.kind !== 'pair') {
     throw new Error('drop: solo items not yet implemented');
   }
-  const board = landPair(state.board, active);
+  const { board, firstLandingRow, secondLandingRow } = landPair(
+    state.board,
+    active,
+  );
   const next: State = { ...state, board, active: null };
-  return [next, [{ event: { kind: 'pair-land' }, snapshot: next }], rng];
+  return [
+    next,
+    [
+      {
+        event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
+        snapshot: next,
+      },
+    ],
+    rng,
+  ];
 }
 
 // Each half falls independently to the lowest empty cell in its
 // column. For a vertical pair both halves share a column; placing
 // the bottom (`first`) before the top (`second`) means the second
 // call's "lowest empty" is the row above the first, which is what
-// we want.
+// we want. The landing rows flow into the step so the animation
+// driver can size the fall without re-walking the board.
 function landPair(
   board: Board,
   pair: Extract<ActivePiece, { kind: 'pair' }>,
-): Board {
+): { board: Board; firstLandingRow: number; secondLandingRow: number } {
   const next: Cell[][] = board.map((row) => [...row]);
   const firstColumn = pair.column;
   const secondColumn =
     pair.orientation === 'horizontal' ? pair.column + 1 : pair.column;
-  placeFalling(next, firstColumn, { kind: 'element', tier: pair.first });
-  placeFalling(next, secondColumn, { kind: 'element', tier: pair.second });
-  return next;
+  const firstLandingRow = placeFalling(next, firstColumn, {
+    kind: 'element',
+    tier: pair.first,
+  });
+  const secondLandingRow = placeFalling(next, secondColumn, {
+    kind: 'element',
+    tier: pair.second,
+  });
+  return { board: next, firstLandingRow, secondLandingRow };
 }
 
 function placeFalling(
   board: Cell[][],
   column: number,
   cell: Cell,
-): void {
+): number {
   for (let row = 0; row < board.length; row++) {
     if (board[row][column].kind === 'empty') {
       board[row][column] = cell;
-      return;
+      return row;
     }
   }
   throw new Error(`drop: column ${column} has no empty cell`);

@@ -6,6 +6,12 @@
 // potion; tier 12 is the gold nugget.
 export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
+// The row at which the active piece sits for its whole life. Modelled
+// as a constant rather than a state field so shift/rotate transitions
+// don't carry it around (see ActivePiece doc). Both rendering and the
+// drop-fall animation read it from here.
+export const SPAWN_ROW = 9;
+
 // 0-indexed grid position. Row 0 is the floor; column 0 is the left wall.
 export type Pos = { readonly row: number; readonly column: number };
 
@@ -89,7 +95,11 @@ export type Step = {
 export type StepEvent =
   | { readonly kind: "pair-shift" }
   | { readonly kind: "pair-rotate" }
-  | { readonly kind: "pair-land" }
+  | {
+      readonly kind: "pair-land";
+      readonly firstLandingRow: number;
+      readonly secondLandingRow: number;
+    }
   | { readonly kind: "merge" }
   | { readonly kind: "gravity" }
   | { readonly kind: "detonate" }

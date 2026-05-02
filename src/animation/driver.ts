@@ -4,11 +4,15 @@
 // between the prior snapshot and the in-flight step's snapshot.
 // See 08-software-design.md ("Animation layer").
 
-import type { State, Step } from '../core/state';
+import { SPAWN_ROW, type State, type Step } from '../core/state';
 import type { Store } from '../store';
 
 const SHIFT_DURATION_MS = 150;
 const ROTATE_DURATION_MS = 200;
+// Per 05-animations.md: 50 ms per cell of fall distance. Both halves
+// fall at the same rate; the slower half (longer drop) sets the step's
+// total duration.
+const FALL_MS_PER_CELL = 50;
 
 export type InFlight = {
   readonly step: Step;
@@ -65,7 +69,17 @@ function stepDuration(step: Step): number {
       return SHIFT_DURATION_MS;
     case 'pair-rotate':
       return ROTATE_DURATION_MS;
-    case 'pair-land':
+    case 'pair-land': {
+      // Vertical pairs spawn straddling the spawn row (bottom at
+      // SPAWN_ROW - 0.5, top at SPAWN_ROW + 0.5), so the bottom half's
+      // fall is half a cell shorter than its target row would suggest
+      // and the top half's is half a cell longer. Either way the
+      // larger distance dominates the step duration; the per-half
+      // tweens use the precise distance to stay in sync at 50 ms/cell.
+      const firstDistance = SPAWN_ROW - step.event.firstLandingRow;
+      const secondDistance = SPAWN_ROW - step.event.secondLandingRow;
+      return FALL_MS_PER_CELL * Math.max(firstDistance, secondDistance);
+    }
     case 'merge':
     case 'gravity':
     case 'detonate':

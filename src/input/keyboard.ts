@@ -63,7 +63,8 @@ function mapKey(key: string): Input | null {
       return { kind: 'shift', direction: 'right' };
     case 'ArrowUp':
       return { kind: 'rotate' };
-    // ArrowDown maps to drop — wired when the core implements it.
+    case 'ArrowDown':
+      return { kind: 'drop' };
     default:
       return null;
   }

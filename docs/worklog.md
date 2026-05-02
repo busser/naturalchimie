@@ -3,6 +3,30 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Animated the drop fall on ArrowDown
+
+Wired `ArrowDown` to the core's `drop` input and gave the `pair-land`
+step a real duration, so each half is visibly seen falling instead of
+teleporting onto the board. The step now carries `firstLandingRow`
+and `secondLandingRow`; the driver multiplies the larger of the two
+fall distances by 50 ms/cell per `05-animations.md`. Per-half progress
+in the renderer scales raw `t` by `maxDistance / ownDistance`, so when
+one column is more occupied than the other the shorter half lands
+early and waits at its target while the slower half finishes. Vertical
+pairs need no orientation special-case: the spawn-area ±0.5 offsets
+cancel against the row-apart landings, so both halves cover the same
+total distance.
+
+`SPAWN_ROW` moved out of the renderer into `core/state.ts`. The design
+doc's "spawn row is rendering" framing was about not making it a state
+field; as a shared constant alongside the `ActivePiece` type it lets
+the driver size the fall without animation back-importing from
+rendering.
+
+Settle (squash and stretch on landing) and the cascade that should
+follow a drop are still TODO. With no spawn yet, the playfield goes
+idle after a single drop.
+
 ## 2026-05-02 — Landed the pair on drop
 
 Replaced the `drop` stub in `applyInput` with the landing portion of
