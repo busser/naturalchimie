@@ -32,13 +32,15 @@ async function main(): Promise<void> {
     sprites,
     cellSize: CELL_SIZE,
     getSnapshot: store.getSnapshot,
+    getInFlight: driver.getInFlight,
   });
-  attachKeyboard(store);
+  const keyboard = attachKeyboard(store);
 
   let lastScore = -1;
   function frame(now: number): void {
     driver.tick(now);
-    renderer.draw();
+    keyboard.tick();
+    renderer.draw(now);
     const score = store.getSnapshot().score;
     if (score !== lastScore) {
       scoreEl.textContent = String(score);

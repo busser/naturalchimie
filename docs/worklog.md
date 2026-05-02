@@ -3,6 +3,46 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Implemented playable shift/rotate UI
+
+Built the four runtime layers behind the active pair: bootstrap
+(initial `State` factory), renderer (Canvas 2D playfield), store
+(committed snapshot + RNG + step queue), animation driver
+(`requestAnimationFrame`-driven, ticks the queue, commits on
+completion), and input (keyboard → store dispatch with held-key
+repeat). A single RAF loop in `main.ts` orders the per-frame work
+as `driver.tick → keyboard.tick → renderer.draw`. Sky and chrome
+are CSS; the playfield itself is a transparent canvas overlay.
+
+For the shift tween, halves linearly lerp between from/to positions
+in board coordinates. For rotation, both halves arc 90° CW around
+the pair's midpoint, with the midpoint itself sliding linearly
+between the prev and next geometric centers. The two centers
+differ by half a cell whenever the rotation center sits on a column
+boundary (the spawn position, and after every wall-kick), and the
+sliding center is what lets halves land exactly on grid at t=1.
+
+Z-order matches `04-visual-style.md`: lower rows render in front.
+Active-piece halves are sorted by row descending each frame so the
+order updates continuously as a rotation crosses, and `drawBoard`
+iterates from highest row to lowest for the same reason. The first
+draft had it backwards and produced a pop at the end of every
+rotation, when the post-rotation V state's draw order swapped which
+half was on top.
+
+Held-key repeat works like the spec describes: a pressed key fires
+once on `keydown`, and subsequent fires happen one per animation
+cycle while the buffer and step queue are empty. The check is a
+single `store.peekNextStep() === null`, which is true exactly when
+both queues are drained — drainInputs runs lazily inside peek, so
+a no-op input (e.g. shifting into a wall) doesn't sit in the buffer
+and falsely signal "busy".
+
+Animation timings landed at 150 ms shift / 200 ms rotate after
+playtesting. Spec values (60 / 100) felt twitchy, the 200 / 350
+values used while wiring repeat behavior felt sluggish; the spec
+explicitly invites this kind of by-feel tuning.
+
 ## 2026-05-02 — Fixed rotation 2-cycle bug
 
 Spotted while playing with the wired-up shift/rotate UI: rotating

@@ -1,43 +1,77 @@
 // Animation driver. Pulls one step at a time from the store, plays
 // it for the step's duration, and on completion commits the snapshot.
-// See 08-software-design.md ("Animation layer") for the rationale.
-//
-// Durations are all zero in this iteration: the driver immediately
-// commits any step it sees. Real tweens land in a follow-up.
+// The renderer asks `getInFlight(now)` each frame to interpolate
+// between the prior snapshot and the in-flight step's snapshot.
+// See 08-software-design.md ("Animation layer").
 
-import type { Step } from '../core/state';
+import type { State, Step } from '../core/state';
 import type { Store } from '../store';
+
+const SHIFT_DURATION_MS = 150;
+const ROTATE_DURATION_MS = 200;
+
+export type InFlight = {
+  readonly step: Step;
+  readonly prevSnapshot: State;
+  readonly t: number;
+};
 
 export type Driver = {
   tick(now: number): void;
+  getInFlight(now: number): InFlight | null;
+};
+
+type Current = {
+  readonly step: Step;
+  readonly prevSnapshot: State;
+  readonly startNow: number;
 };
 
 export function createDriver(store: Store): Driver {
-  let current: Step | null = null;
-  let currentStart = 0;
+  let current: Current | null = null;
 
   function tick(now: number): void {
-    // Loop so a frame can drain multiple zero-duration steps. Once
-    // real durations land, the in-progress step's branch returns
-    // early and at most one step starts per frame.
+    // Loop so a frame can drain multiple zero-duration steps
+    // back-to-back. For non-zero durations the inner branch returns
+    // and we resume next frame.
     while (true) {
       if (current === null) {
-        current = store.peekNextStep();
-        if (current === null) return;
-        currentStart = now;
+        const step = store.peekNextStep();
+        if (step === null) return;
+        current = { step, prevSnapshot: store.getSnapshot(), startNow: now };
       }
-      const duration = stepDuration(current);
-      if (now - currentStart < duration) return;
+      const duration = stepDuration(current.step);
+      if (now - current.startNow < duration) return;
       store.commitNextStep();
       current = null;
     }
   }
 
-  return { tick };
+  function getInFlight(now: number): InFlight | null {
+    if (current === null) return null;
+    const duration = stepDuration(current.step);
+    const t = duration === 0
+      ? 1
+      : Math.min(1, (now - current.startNow) / duration);
+    return { step: current.step, prevSnapshot: current.prevSnapshot, t };
+  }
+
+  return { tick, getInFlight };
 }
 
-function stepDuration(_step: Step): number {
-  // Real tween durations land alongside the per-event interpolation
-  // logic. Until then, every step plays instantly.
-  return 0;
+function stepDuration(step: Step): number {
+  switch (step.event.kind) {
+    case 'pair-shift':
+      return SHIFT_DURATION_MS;
+    case 'pair-rotate':
+      return ROTATE_DURATION_MS;
+    case 'pair-land':
+    case 'merge':
+    case 'gravity':
+    case 'detonate':
+    case 'dynamite-blast':
+    case 'spawn':
+      // Durations land alongside each step's implementation.
+      return 0;
+  }
 }
