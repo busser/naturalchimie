@@ -61,20 +61,34 @@ function rotate(
   rng: Rng,
 ): [State, Step[], Rng] {
   if (active.kind !== 'pair') return [state, [], rng];
-  const newOrientation =
-    active.orientation === 'horizontal' ? 'vertical' : 'horizontal';
+  const wasHorizontal = active.orientation === 'horizontal';
+  const newOrientation = wasHorizontal ? 'vertical' : 'horizontal';
   // V→H wall-kick: a vertical pair at the right wall would push its
   // right half past column 6, so the pair shifts one column left.
-  // Spec calls this out as the only kick case
-  // (`docs/01-gameplay-rules.md:112-116`); H→V never needs one because
-  // the resulting vertical pair always fits in its starting column.
+  // Spec calls this out as the only kick case; H→V never needs one
+  // because the resulting vertical pair always fits in its starting
+  // column.
   const newColumn =
-    active.orientation === 'vertical' && active.column + 1 > COLUMN_MAX
+    !wasHorizontal && active.column + 1 > COLUMN_MAX
       ? active.column - 1
       : active.column;
+  // 90° clockwise rotation around the pair's center. With first =
+  // anchor end (left for H, bottom for V), the spec's mapping (left
+  // → top, right → bottom; top → right, bottom → left) makes labels
+  // swap on H→V and stay put on V→H. Net effect: 4 rotations is
+  // identity, 2 rotations swap the pair.
+  const [first, second] = wasHorizontal
+    ? [active.second, active.first]
+    : [active.first, active.second];
   const next: State = {
     ...state,
-    active: { ...active, column: newColumn, orientation: newOrientation },
+    active: {
+      kind: 'pair',
+      column: newColumn,
+      orientation: newOrientation,
+      first,
+      second,
+    },
   };
   return [next, [{ event: { kind: 'pair-rotate' }, snapshot: next }], rng];
 }

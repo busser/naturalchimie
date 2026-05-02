@@ -29,10 +29,14 @@ export type Orientation = "horizontal" | "vertical";
 // as a rendering-layer constant rather than threaded through every
 // transition. For a pair, `column` is the lower-column anchor (the
 // left cell when horizontal, the only column when vertical). `first`
-// is the element at that anchor; `second` is the other one. Rotation
-// flips `orientation` but preserves the first/second labels:
-//   horizontal left  ↔ vertical bottom  (= first)
-//   horizontal right ↔ vertical top     (= second)
+// is the element at that anchor; `second` is the other one.
+//
+// 90° clockwise rotation maps spatial positions left→top, right→
+// bottom, top→right, bottom→left. With first = anchor end, the
+// labels swap on H→V (the old left becomes the new top) and stay
+// put on V→H (the old bottom is still the new left). Four rotations
+// restore the original configuration; two rotations swap first and
+// second.
 //
 // Solo items occupy a single cell and have no orientation.
 export type ActivePiece =

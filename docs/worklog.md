@@ -3,6 +3,26 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Fixed rotation 2-cycle bug
+
+Spotted while playing with the wired-up shift/rotate UI: rotating
+twice returned the pair to its original state, instead of swapping
+the two halves the way a real 90° rotation should. Tracking the
+math down, the spec was internally inconsistent — H→V described
+`right→top, left→bottom` (geometrically a 90° counter-clockwise
+rotation) while V→H described `top→right, bottom→left` (90°
+clockwise). The two halves cancelled each other into a 2-cycle
+instead of the expected 4-cycle, and `apply.ts` was faithfully
+following the spec text.
+
+Fixed the H→V description in `01-gameplay-rules.md` to
+`left→top, right→bottom`, so both halves now describe the same
+90° CW rotation. In `apply.ts`, rotation swaps `first`/`second` on
+H→V and preserves them on V→H. Identity returns at four rotations,
+labels swap at two. Two tests updated to assert the swap; the
+"sticky wall-kick" test gained a label-swap assertion as a
+side-effect, since the kick path now also sees the swap.
+
 ## 2026-05-02 — Closed animation API and main-wiring open questions
 
 Animation layer settled as a single `requestAnimationFrame` driver,

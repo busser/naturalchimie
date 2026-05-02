@@ -96,8 +96,8 @@ during a rotation; neither serves as a fixed pivot.
 After one rotation step:
 
 - A horizontal pair becomes vertical. The element that was on the
-  **right** ends up on the **top** (at row offset +0.5 above the
-  center). The element that was on the **left** ends up on the
+  **left** ends up on the **top** (at row offset +0.5 above the
+  center). The element that was on the **right** ends up on the
   **bottom** (at row offset −0.5 below the center). Both end up
   in the same column — the column of the rotation center, which
   for the spawn position is column 4 (rounded down from the
@@ -108,6 +108,12 @@ After one rotation step:
   **top** ends up on the **right** (at column offset +0.5 right
   of the center). The element that was on the **bottom** ends up
   on the **left** (at column offset −0.5 left of the center).
+
+Four consecutive rotations restore the pair's original
+configuration. Two consecutive rotations swap which element is
+the "first" of the pair: a horizontal pair `[A][B]` rotates
+through `V[bottom=B, top=A]`, then back to `H[B][A]`, then
+`V[bottom=A, top=B]`, then back to `H[A][B]`.
 
 If a vertical-to-horizontal rotation would push the right element
 past column 7, the pair is **wall-kicked** one column to the
