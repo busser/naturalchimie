@@ -3,6 +3,33 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Added the next-piece preview
+
+The sidebar's preview recess was empty. Added `src/renderer/preview.ts`,
+a tiny canvas-2D renderer that mirrors the playfield's setup
+(`devicePixelRatio` scaling, `imageSmoothingQuality: 'high'`) and draws
+`state.preview` via the shared `drawSpriteAtCell`. Pairs render in
+horizontal orientation (matching how a fresh pair spawns); solo items
+center in the slot. The renderer skips redraw when the `Piece` is the
+same reference as last frame — `apply.ts` carries `state.preview`
+through shifts and rotates by spread, and only swaps it on drop+spawn,
+so reference equality is enough.
+
+Sizing took two passes. First cut was a 1-cell-tall canvas at the
+playfield's 48 px cell size; the cork tops clipped at the canvas
+ceiling because sprites extrude upward beyond their cell footprint.
+Adding a full row of headroom (2 cells tall) fixed the top but the
+right side of each cork still clipped — the 30° tilt makes the cork
+lean past the cell width to the right. Settled on 0.5 cells of
+headroom on top and on each side: canvas is `(2 + 1) × 1.5` cells =
+144 × 72 px at the same 48 px cell size as the playfield, so sprites
+render at full scale. The recess stays at its original 96 px height,
+giving 12 px of equal padding all around the canvas.
+
+The slide-up-out / slide-down-in preview animation in
+`05-animations.md` is still TODO. This pass is the static display
+only.
+
 ## 2026-05-02 — Added the game-over UI
 
 The core was emitting `game-over` steps but nothing in the UI

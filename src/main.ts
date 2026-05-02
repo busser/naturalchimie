@@ -3,6 +3,7 @@ import { createDriver } from './animation/driver';
 import { loadSprites } from './assets/sprite-loader';
 import { attachKeyboard } from './input/keyboard';
 import { createRenderer } from './renderer/playfield';
+import { createPreviewRenderer } from './renderer/preview';
 import { createStore } from './store';
 import type { State } from './core/state';
 
@@ -36,6 +37,7 @@ function isGameOver(state: State): boolean {
 
 async function main(): Promise<void> {
   const canvas = requireElement('playfield-canvas', HTMLCanvasElement);
+  const previewCanvas = requireElement('preview-canvas', HTMLCanvasElement);
   const scoreEl = requireElement('score', HTMLElement);
   const gameOverEl = requireElement('game-over', HTMLElement);
   const gameOverScoreEl = requireElement('game-over-score', HTMLElement);
@@ -49,6 +51,11 @@ async function main(): Promise<void> {
     cellSize: CELL_SIZE,
     getSnapshot: store.getSnapshot,
     getInFlight: driver.getInFlight,
+  });
+  const previewRenderer = createPreviewRenderer({
+    canvas: previewCanvas,
+    sprites,
+    cellSize: CELL_SIZE,
   });
   const keyboard = attachKeyboard(store);
 
@@ -67,6 +74,7 @@ async function main(): Promise<void> {
     keyboard.tick();
     renderer.draw(now);
     const snapshot = store.getSnapshot();
+    previewRenderer.draw(snapshot.preview);
     if (snapshot.score !== lastScore) {
       scoreEl.textContent = String(snapshot.score);
       lastScore = snapshot.score;
