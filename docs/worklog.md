@@ -3,6 +3,22 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-02 — Unified renderer z-order across board and active
+
+The playfield drew the board first, then drew the active piece on
+top of everything. While a pair was at the spawn row that read
+correctly — row 9 sits above any board cell — but during the fall a
+descending half could be visually higher up the screen than a board
+cell in a lower row, which by spec ("lower rows render in front")
+should appear in front of it. Instead the falling pair was always on
+top, then snapped behind on commit when its halves became board
+cells.
+
+Fix: collect board cells and active halves into one list, sort by
+row descending, draw in that order. The transition through landing
+is now continuous, and the per-active sub-sort is gone — the unified
+sort handles it.
+
 ## 2026-05-02 — Wired up spawn
 
 Added `src/core/spawn.ts` with `computePool(board)` and

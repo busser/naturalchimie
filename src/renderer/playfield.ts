@@ -57,16 +57,18 @@ export function createRenderer(deps: RendererDeps): Renderer {
       const inflight = getInFlight(now);
       ctx.clearRect(0, 0, cssWidth, cssHeight);
       drawLoseThreshold(ctx, cellSize, cssWidth, cssHeight);
-      drawBoard(ctx, state.board, sprites, cellSize, cssHeight);
+      // Collect board cells and active halves into one list and sort
+      // by row descending so lower rows render on top, per
+      // 04-visual-style.md ("Element sprites"). Drawing the active
+      // pile separately put a falling pair in front of board cells
+      // below it on the way down, then snapped behind them on commit.
+      const items = collectBoardItems(state.board, sprites);
       if (state.active !== null) {
-        const halves = activeHalvesAtMoment(state.active, inflight, sprites);
-        // Higher rows draw first so lower rows render on top, per
-        // 04-visual-style.md ("Element sprites"). Mid-rotation the
-        // halves swap row positions and the order updates each frame.
-        const ordered = [...halves].sort((a, b) => b.row - a.row);
-        for (const half of ordered) {
-          drawAt(ctx, half.sprite, half.col, half.row, cellSize, cssHeight);
-        }
+        items.push(...activeHalvesAtMoment(state.active, inflight, sprites));
+      }
+      items.sort((a, b) => b.row - a.row);
+      for (const item of items) {
+        drawAt(ctx, item.sprite, item.col, item.row, cellSize, cssHeight);
       }
     },
   };
@@ -107,24 +109,16 @@ function drawLoseThreshold(
   ctx.restore();
 }
 
-function drawBoard(
-  ctx: CanvasRenderingContext2D,
-  board: Board,
-  sprites: SpriteAtlas,
-  cellSize: number,
-  height: number,
-): void {
-  // Iterate from highest row down so lower rows render last (= on
-  // top), letting upward-extruding sprite tops sit behind the row
-  // above's body, per 04-visual-style.md ("Element sprites").
-  for (let r = board.length - 1; r >= 0; r--) {
+function collectBoardItems(board: Board, sprites: SpriteAtlas): RenderHalf[] {
+  const items: RenderHalf[] = [];
+  for (let r = 0; r < board.length; r++) {
     for (let c = 0; c < board[r].length; c++) {
       const cell = board[r][c];
       if (cell.kind === 'empty') continue;
-      const asset = assetForCell(cell, sprites);
-      drawAt(ctx, asset, c, r, cellSize, height);
+      items.push({ sprite: assetForCell(cell, sprites), col: c, row: r });
     }
   }
+  return items;
 }
 
 function drawAt(
