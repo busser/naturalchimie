@@ -114,7 +114,11 @@
       1159
     ],
     "cell_width_px": 800,
-    "cell_height_px": 800
+    "cell_height_px": 800,
+    "fuse_tip": [
+      619,
+      322
+    ]
   },
   "special-detonator": {
     "file": "special-detonator.png",
