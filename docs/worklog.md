@@ -3,6 +3,27 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Stopped the game-over screen from flashing on saved drops
+
+A piece dropped into the overflow zone whose cascade then cleared
+everything back below row 7 was flashing the game-over overlay in and
+out: it appeared the moment the piece landed, then faded as the
+cascade resolved. The core was right all along — `apply.ts` only
+emits a `game-over` step on the post-cascade stable board — but
+`main.ts` was re-deriving the loss condition every frame from
+`store.getSnapshot()`. Mid-cascade snapshots (between `pair-land` and
+the subsequent `merge`/`gravity` steps) have `active === null` and
+elements transiently sitting in rows 7+, which is indistinguishable
+from a real loss when you only look at the snapshot.
+
+Switched the overlay to an event-driven trigger. `createDriver` now
+takes an optional `onStepCommit` callback that fires right after each
+step's snapshot lands in the store; `main.ts` subscribes and reveals
+the overlay only when a `game-over` step commits, and hides it on
+restart. The per-frame `isGameOver(snapshot)` derivation and the
+`OVERFLOW_ROW_MIN` constant in `main.ts` are gone. State stays "the
+position", not "the position plus a UI flag".
+
 ## 2026-05-03 — Removed the dynamite fuse delay
 
 The dynamite blast had an 80 ms fuse phase up front: dynamite sprite

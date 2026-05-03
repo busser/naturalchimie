@@ -100,7 +100,10 @@ type Current = {
   readonly startNow: number;
 };
 
-export function createDriver(store: Store): Driver {
+export function createDriver(
+  store: Store,
+  onStepCommit?: (step: Step) => void,
+): Driver {
   let current: Current | null = null;
 
   function tick(now: number): void {
@@ -115,8 +118,10 @@ export function createDriver(store: Store): Driver {
       }
       const duration = stepDuration(current.step);
       if (now - current.startNow < duration) return;
+      const committed = current.step;
       store.commitNextStep();
       current = null;
+      onStepCommit?.(committed);
     }
   }
 
