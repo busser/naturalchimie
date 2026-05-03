@@ -145,23 +145,55 @@ After gravity finishes, the cascade pauses for the
 **inter-cascade pause** (~80 ms) — a brief beat for the eye to
 catch up — and then checks for new reactions.
 
+## Dynamite fuse
+
+The dynamite's fuse is **continuously lit** for the entire time the
+stick is the active piece — there is no wind-up on landing. The
+fuse lights the moment the stick first becomes visible (during the
+spawn-slide, even while the sprite is partially above the
+playfield) and stays lit through every shift, rotate, and the drop
+itself, until the explosion sequence begins.
+
+A small **orange glow** sits pinned to the fuse tip. From that
+point, two streams emit continuously:
+
+- **Sparks**: small (~2–3 px) bright white-and-yellow points that
+  fan upward off the fuse tip with random spread, briefly arc with
+  a touch of gravity, and fade as they rise. Drawn additively so
+  they read as hot light.
+- **Smoke wisps**: small (~3–7 px) pale grey puffs that drift
+  slowly upward, expanding and fading. Drawn with the default
+  blend so they darken against the sky behind the playfield, like
+  real smoke.
+
+Density is modest — this is ambient idle decoration, not a focal
+effect. Particles live in **screen-space** and stay where they are
+born. When the stick shifts left or right, particles already
+emitted stay where they were, producing a clear horizontal trail.
+When the stick drops, particles emitted earlier in the descent
+stay near the top of the column while the stick rushes downward,
+so the trail visibly stretches the length of the fall. No
+"inherit velocity" logic is needed: the trail falls out naturally
+from particles having their own lives independent of the moving
+sprite.
+
+Emission stops at impact (the moment the explosion sequence
+begins). In-flight particles continue drifting and fade out their
+lifetimes; the explosion's own particle system overlays.
+
 ## Dynamite explosion
 
 When dynamite lands:
 
-1. The dynamite's fuse animates briefly (~80 ms): a small spark
-   travels from the fuse tip to the stick body. (This is the only
-   "wind-up" animation in the game; it telegraphs that the
-   dynamite is *about* to fire.)
-2. A bright orange-yellow **explosion blast** appears at the
+1. A bright orange-yellow **explosion blast** appears at the
    dynamite's cell. The blast is a roughly cell-sized burst with
    irregular flame edges and several spark particles.
-3. The blast travels **downward**, one cell at a time. Each cell
+2. The blast travels **downward**, one cell at a time. Each cell
    the blast enters:
    - The blast renders for 60 ms in that cell.
    - Any element in that cell is destroyed: it briefly flashes
      white (one frame, ~16 ms) then disappears.
-4. The blast continues down to row 1, then dissipates with a
+3. The blast continues down to row 1, then dissipates with a
    small upward smoke puff.
 
 During the explosion, **no other animations run** in the affected
