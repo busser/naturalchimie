@@ -8,6 +8,7 @@
 import { applyInput } from '../core/apply';
 import { createInitialState } from '../core/initial-state';
 import { createRng } from '../core/rng';
+import { samplePiece } from '../core/spawn';
 import type { Input, State, Step } from '../core/state';
 
 export type Store = {
@@ -24,6 +25,10 @@ export type Store = {
   // Discards the current run and starts fresh from `seed`. Pending
   // inputs and pending steps are dropped so the new run starts clean.
   restart(seed: number): void;
+  // Dev-only: re-rolls the preview piece against the current board.
+  // No-op while inputs or steps are pending so it can't race with a
+  // cascade whose spawn step has already baked in the old preview.
+  randomizePreview(): void;
 };
 
 export function createStore(seed: number): Store {
@@ -68,6 +73,12 @@ export function createStore(seed: number): Store {
       inputQueue.length = 0;
       stepQueue.length = 0;
       acceptingInput = committed.active !== null;
+    },
+    randomizePreview: () => {
+      if (inputQueue.length > 0 || stepQueue.length > 0) return;
+      const [preview, nextRng] = samplePiece(committed.board, rng);
+      committed = { ...committed, preview };
+      rng = nextRng;
     },
   };
 }

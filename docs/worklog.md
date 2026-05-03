@@ -3,6 +3,27 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-04 — Added a dev-mode preview re-roll
+
+Playtesting specific cascades is awkward when the only handle on
+spawn is the seed. Added a dev-only spacebar binding that re-rolls
+the preview piece against the current board, so the next piece to
+spawn becomes whatever the next sample produces. The existing
+spacebar-to-restart on game over still wins; the re-roll only fires
+when game over isn't showing, and the whole branch is gated on
+`import.meta.env.DEV` so production builds tree-shake it.
+
+The mutation lives behind a new `randomizePreview()` method on the
+store rather than a renderer-side hack, which keeps the one place
+that touches `committed` in one file. It no-ops while the input or
+step queues are non-empty: a cascade in flight has already baked
+the old preview into its spawn step's snapshot, so changing
+`committed.preview` mid-cascade would either get clobbered when
+that step commits or, worse, desync the preview the player sees
+from the piece that's actually about to spawn. Idle-only sidesteps
+both. Also pulled in `vite/client` types so `import.meta.env` type-
+checks.
+
 ## 2026-05-03 — Lit a continuous fuse on the dynamite stick
 
 Replacement for the deleted 80 ms fuse-on-landing wind-up. The

@@ -73,11 +73,17 @@ async function main(): Promise<void> {
 
   window.addEventListener('keydown', (e) => {
     if (e.key !== ' ' && e.key !== 'Spacebar') return;
-    if (!gameOverShown) return;
-    e.preventDefault();
-    driver.reset();
-    store.restart(Date.now());
-    hideGameOver();
+    if (gameOverShown) {
+      e.preventDefault();
+      driver.reset();
+      store.restart(Date.now());
+      hideGameOver();
+      return;
+    }
+    if (import.meta.env.DEV) {
+      e.preventDefault();
+      store.randomizePreview();
+    }
   });
 
   let lastScore = -1;
