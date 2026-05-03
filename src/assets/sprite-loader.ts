@@ -16,6 +16,7 @@ type RawEntry = {
   anchor: [number, number];
   cell_width_px: number;
   cell_height_px: number;
+  fuse_tip?: [number, number];
 };
 
 const SPRITES_DIR = '/sprites';
@@ -34,6 +35,7 @@ export async function loadSprites(): Promise<SpriteAtlas> {
         anchor: entry.anchor,
         cell_width_px: entry.cell_width_px,
         cell_height_px: entry.cell_height_px,
+        fuse_tip: entry.fuse_tip,
         image,
       };
       return [key, asset] as const;
