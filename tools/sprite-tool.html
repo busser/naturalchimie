@@ -139,12 +139,33 @@
       gap: 4px;
       font-size: 12px;
     }
-    #metadata-fields input {
+    #metadata-fields input,
+    #fuse-tip-fields input[type="number"] {
       font: inherit;
       padding: 4px 6px;
       border: 1px solid var(--border);
       background: #fff;
       width: 100%;
+    }
+
+    #fuse-tip-fields {
+      display: grid;
+      grid-template-columns: auto 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+      align-items: end;
+    }
+    #fuse-tip-fields label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+    #fuse-tip-fields .fuse-toggle {
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      padding-bottom: 4px;
     }
 
     #preview-canvas {
@@ -196,7 +217,14 @@
           <label><input type="checkbox" id="show-bounds" checked> Image bounds</label>
           <label><input type="checkbox" id="show-anchor" checked> Anchor</label>
           <label><input type="checkbox" id="show-rect" checked> Cell rectangle</label>
-          <span class="hint">Click image to set anchor • drag corner handles to resize cell</span>
+          <label><input type="checkbox" id="show-fuse-tip" checked> Fuse tip</label>
+          <label>Click sets:
+            <select id="click-target">
+              <option value="anchor" selected>anchor</option>
+              <option value="fuse-tip">fuse tip</option>
+            </select>
+          </label>
+          <span class="hint">Click image to set the chosen point • drag corner handles to resize cell</span>
         </div>
         <canvas id="source-canvas" width="640" height="480"></canvas>
       </section>
@@ -208,6 +236,11 @@
           <label>anchor.y <input type="number" id="anchor-y" min="0" step="1"></label>
           <label>cell_width_px <input type="number" id="cell-w" min="1" step="1"></label>
           <label>cell_height_px <input type="number" id="cell-h" min="1" step="1"></label>
+        </div>
+        <div id="fuse-tip-fields">
+          <label class="fuse-toggle"><input type="checkbox" id="has-fuse-tip"> Has fuse tip</label>
+          <label>fuse_tip.x <input type="number" id="fuse-tip-x" min="0" step="1" disabled></label>
+          <label>fuse_tip.y <input type="number" id="fuse-tip-y" min="0" step="1" disabled></label>
         </div>
       </section>
 
@@ -231,7 +264,7 @@
   </div>
 
   <script type="module">
-    import { drawSpriteAtCell } from '../src/assets/sprite-renderer.ts';
+    import { drawSpriteAtCell, spriteSourcePointToScreen } from '../src/assets/sprite-renderer.ts';
 
     const $ = (id) => document.getElementById(id);
 
@@ -253,6 +286,8 @@
       showBounds: true,
       showAnchor: true,
       showRect: true,
+      showFuseTip: true,
+      clickTarget: 'anchor',
       drag: null,
       viewScale: 1,
       saveTimer: null,
@@ -282,9 +317,15 @@
       $('show-bounds').addEventListener('change', (e) => { state.showBounds = e.target.checked; redrawSource(); });
       $('show-anchor').addEventListener('change', (e) => { state.showAnchor = e.target.checked; redrawSource(); });
       $('show-rect').addEventListener('change', (e) => { state.showRect = e.target.checked; redrawSource(); });
+      $('show-fuse-tip').addEventListener('change', (e) => { state.showFuseTip = e.target.checked; redrawSource(); });
+      $('click-target').addEventListener('change', (e) => { state.clickTarget = e.target.value; });
 
       for (const id of ['anchor-x', 'anchor-y', 'cell-w', 'cell-h']) {
         $(id).addEventListener('input', onFieldInput);
+      }
+      $('has-fuse-tip').addEventListener('change', onHasFuseTipChange);
+      for (const id of ['fuse-tip-x', 'fuse-tip-y']) {
+        $(id).addEventListener('input', onFuseTipFieldInput);
       }
 
       $('two-sprite-mode').addEventListener('change', (e) => {
@@ -510,6 +551,12 @@
       $('anchor-y').value = md.anchor[1];
       $('cell-w').value = md.cell_width_px;
       $('cell-h').value = md.cell_height_px;
+      const has = Array.isArray(md.fuse_tip);
+      $('has-fuse-tip').checked = has;
+      $('fuse-tip-x').disabled = !has;
+      $('fuse-tip-y').disabled = !has;
+      $('fuse-tip-x').value = has ? md.fuse_tip[0] : '';
+      $('fuse-tip-y').value = has ? md.fuse_tip[1] : '';
     }
 
     function onFieldInput() {
@@ -524,6 +571,39 @@
       md.anchor[1] = ay;
       md.cell_width_px = cw;
       md.cell_height_px = ch;
+      markAuthored(state.selected);
+      redrawSource();
+      redrawPreview();
+      scheduleSave();
+    }
+
+    function onHasFuseTipChange(e) {
+      const md = state.metadata[state.selected];
+      if (!md) return;
+      if (e.target.checked) {
+        if (!Array.isArray(md.fuse_tip)) {
+          const sprite = state.sprites[state.selected];
+          const w = sprite ? sprite.image.width : 0;
+          md.fuse_tip = [Math.round(w / 2), 0];
+        }
+      } else {
+        delete md.fuse_tip;
+      }
+      markAuthored(state.selected);
+      syncFieldsFromMetadata();
+      redrawSource();
+      redrawPreview();
+      scheduleSave();
+    }
+
+    function onFuseTipFieldInput() {
+      const md = state.metadata[state.selected];
+      if (!md || !Array.isArray(md.fuse_tip)) return;
+      const fx = clamp(parseInt($('fuse-tip-x').value, 10), 0, 1e9);
+      const fy = clamp(parseInt($('fuse-tip-y').value, 10), 0, 1e9);
+      if ([fx, fy].some(Number.isNaN)) return;
+      md.fuse_tip[0] = fx;
+      md.fuse_tip[1] = fy;
       markAuthored(state.selected);
       redrawSource();
       redrawPreview();
@@ -592,6 +672,33 @@
       if (state.showAnchor) {
         drawCrosshair(sourceCtx, ax, ay);
       }
+
+      if (state.showFuseTip && Array.isArray(md.fuse_tip)) {
+        drawFuseTipMarker(
+          sourceCtx,
+          md.fuse_tip[0] * scale,
+          md.fuse_tip[1] * scale,
+        );
+      }
+    }
+
+    function drawFuseTipMarker(ctx, x, y) {
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ff8c00';
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ff8c00';
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
     function drawChecker(ctx, w, h) {
@@ -690,25 +797,36 @@
       if (corner) {
         state.drag = { kind: 'corner', corner };
       } else {
-        state.drag = { kind: 'anchor' };
-        applyAnchorAt(x, y);
+        state.drag = { kind: 'point', target: state.clickTarget };
+        applyPointAt(state.clickTarget, x, y);
       }
     }
 
     function onSourceMouseMove(evt) {
       if (!state.drag || !state.selected) return;
       const { x, y } = getCanvasCoords(sourceCanvas, evt);
-      if (state.drag.kind === 'anchor') {
-        applyAnchorAt(x, y);
+      if (state.drag.kind === 'point') {
+        applyPointAt(state.drag.target, x, y);
       } else if (state.drag.kind === 'corner') {
         applyCornerDragAt(x, y);
       }
     }
 
-    function applyAnchorAt(canvasX, canvasY) {
+    function applyPointAt(target, canvasX, canvasY) {
       const md = state.metadata[state.selected];
-      md.anchor[0] = clamp(Math.round(canvasX / state.viewScale), 0, 1e9);
-      md.anchor[1] = clamp(Math.round(canvasY / state.viewScale), 0, 1e9);
+      const ix = clamp(Math.round(canvasX / state.viewScale), 0, 1e9);
+      const iy = clamp(Math.round(canvasY / state.viewScale), 0, 1e9);
+      if (target === 'fuse-tip') {
+        if (Array.isArray(md.fuse_tip)) {
+          md.fuse_tip[0] = ix;
+          md.fuse_tip[1] = iy;
+        } else {
+          md.fuse_tip = [ix, iy];
+        }
+      } else {
+        md.anchor[0] = ix;
+        md.anchor[1] = iy;
+      }
       markAuthored(state.selected);
       syncFieldsFromMetadata();
       redrawSource();
@@ -760,6 +878,29 @@
         }
       }
 
+      // Static fuse-tip dot in each cell that draws the primary sprite,
+      // so the user can verify the point lands where they expect after
+      // scaling.
+      if (primaryAsset && Array.isArray(primaryAsset.fuse_tip)) {
+        for (let r = 0; r < PREVIEW_GRID; r++) {
+          for (let c = 0; c < PREVIEW_GRID; c++) {
+            const useSecondary = state.twoSpriteMode && secondAsset && r < PREVIEW_GRID - 1;
+            if (useSecondary) continue;
+            const p = spriteSourcePointToScreen(
+              primaryAsset,
+              primaryAsset.fuse_tip,
+              c * PREVIEW_CELL_PX,
+              r * PREVIEW_CELL_PX,
+              PREVIEW_CELL_PX,
+            );
+            previewCtx.fillStyle = '#ff8c00';
+            previewCtx.beginPath();
+            previewCtx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+            previewCtx.fill();
+          }
+        }
+      }
+
       // Cell boundary lines (drawn last, faint)
       previewCtx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
       previewCtx.lineWidth = 1;
@@ -778,6 +919,7 @@
         anchor: md.anchor,
         cell_width_px: md.cell_width_px,
         cell_height_px: md.cell_height_px,
+        fuse_tip: md.fuse_tip,
         image,
       };
     }
