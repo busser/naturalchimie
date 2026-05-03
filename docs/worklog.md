@@ -3,6 +3,27 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Removed the dynamite fuse delay
+
+The dynamite blast had an 80 ms fuse phase up front: dynamite sprite
+held at landingRow, a small spark animated along the stick, then the
+fireball began descending. In play it read as a stutter — the
+dynamite landed and nothing happened for a beat. The fuse spark was
+intended as a telegraph but the eye registered the gap before the
+spark, not the spark itself. Dropped the fuse phase entirely:
+`dynamite-blast` now starts the fireball at `elapsedMs = 0` and its
+duration is just `descent + floor-impact`. `FUSE_DURATION_MS`,
+`FUSE_SPARK_RADIUS_PX`, and `drawFuseSpark` are gone, along with the
+branch in `getSpriteItems` that kept the dynamite sprite visible
+during the fuse window.
+
+The telegraph isn't lost forever — next pass replaces it with a
+continuous fuse that lights when the stick spawns and burns until
+the explosion fires, shedding sparks and smoke that trail behind the
+stick as it falls. The spec in `05-animations.md` still describes
+the old fuse-on-landing telegraph; updating it belongs with that
+follow-up.
+
 ## 2026-05-03 — Made dynamite blow up the column
 
 Wired dynamite end-to-end. In core, `apply.ts` now emits two land

@@ -44,15 +44,14 @@ export const SPAWN_PHASE_DOWN_MS = 200;
 export const SPAWN_PHASE_IN_MS = 200;
 export const SPAWN_DURATION_MS =
   SPAWN_PHASE_OUT_MS + SPAWN_PHASE_DOWN_MS + SPAWN_PHASE_IN_MS;
-// Per 05-animations.md "Dynamite explosion": ~80 ms fuse spark, then
-// a fireball descends to the floor. The fireball's motion is the
-// continuation of the dynamite's drop — same ease-in curve, picking
-// up at the dynamite's landing velocity and accelerating onward. The
-// descent time is derived from that continuation (see
-// dynamiteDescentDurationMs below). After the fireball reaches the
-// floor, the floor-impact tail plays out — embers settle, smoke
-// disperses — adding BLAST_FLOOR_IMPACT_MS to the step.
-export const FUSE_DURATION_MS = 80;
+// Per 05-animations.md "Dynamite explosion": a fireball descends to
+// the floor. The fireball's motion is the continuation of the
+// dynamite's drop — same ease-in curve, picking up at the dynamite's
+// landing velocity and accelerating onward. The descent time is
+// derived from that continuation (see dynamiteDescentDurationMs
+// below). After the fireball reaches the floor, the floor-impact
+// tail plays out — embers settle, smoke disperses — adding
+// BLAST_FLOOR_IMPACT_MS to the step.
 export const BLAST_FLOOR_IMPACT_MS = 480;
 
 // The fireball's descent uses the dynamite drop's curve, stretched
@@ -172,7 +171,6 @@ function stepDuration(step: Step): number {
     }
     case 'dynamite-blast':
       return (
-        FUSE_DURATION_MS +
         dynamiteDescentDurationMs(step.event.landingRow) +
         BLAST_FLOOR_IMPACT_MS
       );

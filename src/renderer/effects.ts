@@ -18,7 +18,6 @@ import {
   BLAST_FLOOR_IMPACT_MS,
   FALL_MS_PER_CELL,
   FIREBALL_TIME_SCALE,
-  FUSE_DURATION_MS,
   GRAVITY_MS_PER_CELL,
   dynamiteDescentDurationMs,
 } from '../animation/driver';
@@ -579,11 +578,7 @@ function drawDroplets(
 //
 // Phases per 05-animations.md, with the renderer's enhancements:
 //
-// 0..FUSE_DURATION_MS                  — fuse spark travels along the
-//                                        stick; dynamite sprite is
-//                                        visible at landingRow.
-// FUSE_DURATION_MS..+ descentDurationMs
-//                                      — a fireball larger than one
+// 0..descentDurationMs                 — a fireball larger than one
 //                                        cell descends from
 //                                        landingRow to the floor,
 //                                        continuing the dynamite's
@@ -695,7 +690,6 @@ const FLOOR_SMOKE_BUOYANCY_MAX_CELLS = 1.0;
 const FLOOR_SMOKE_RADIUS_MIN_FACTOR = 0.4;
 const FLOOR_SMOKE_RADIUS_MAX_FACTOR = 0.85;
 
-const FUSE_SPARK_RADIUS_PX = 3;
 // Mismatched-frequency sines drive per-frame radius wobble on each
 // fireball blob and the floor burst, so the silhouettes flicker
 // without locking to the frame clock.
@@ -918,23 +912,12 @@ function createDynamiteBlastEffect(
     getSpriteItems(now, prev, sprites) {
       const elapsedMs = now - startNow;
       const items: RenderItem[] = [];
-      if (elapsedMs < FUSE_DURATION_MS) {
-        items.push({
-          sprite: sprites.dynamite,
-          col: column,
-          row: landingRow,
-        });
-      }
       // A cell is alive while the fireball's body has not yet
       // overlapped it. Once currentY drops to the cell's top edge
       // (= row + 1), the cell stops rendering — the fireball
       // visually replaces it.
-      let lastAlive = landingRow - 1;
-      if (elapsedMs >= FUSE_DURATION_MS) {
-        const blastElapsedMs = elapsedMs - FUSE_DURATION_MS;
-        const currentY = fireballRowAt(blastElapsedMs);
-        lastAlive = Math.min(landingRow - 1, Math.floor(currentY) - 1);
-      }
+      const currentY = fireballRowAt(elapsedMs);
+      const lastAlive = Math.min(landingRow - 1, Math.floor(currentY) - 1);
       for (let r = 0; r <= lastAlive; r++) {
         const cell = prev.board[r]?.[column];
         if (!cell || cell.kind === 'empty') continue;
@@ -948,41 +931,29 @@ function createDynamiteBlastEffect(
     },
     draw(ctx, now, _prev, _sprites, cellSize, canvasHeight) {
       const elapsedMs = now - startNow;
-      if (elapsedMs < FUSE_DURATION_MS) {
-        drawFuseSpark(
-          ctx,
-          column,
-          landingRow,
-          elapsedMs,
-          cellSize,
-          canvasHeight,
-        );
-        return;
-      }
-      const blastElapsedMs = elapsedMs - FUSE_DURATION_MS;
       // Smoke trail (drawn first, behind the flame).
       drawSmokeTrail(
         ctx,
         column,
         smokeWisps,
-        blastElapsedMs,
+        elapsedMs,
         cellSize,
         canvasHeight,
       );
       // Active fireball: riding the dynamite's drop curve down from
       // landingRow to the floor. After descent ends the floor
       // impact takes over.
-      if (blastElapsedMs < descentDurationMs) {
+      if (elapsedMs < descentDurationMs) {
         drawFireball(
           ctx,
           column,
-          fireballRowAt(blastElapsedMs),
+          fireballRowAt(elapsedMs),
           elapsedMs,
           cellSize,
           canvasHeight,
         );
       }
-      const sinceImpactMs = blastElapsedMs - descentDurationMs;
+      const sinceImpactMs = elapsedMs - descentDurationMs;
       if (sinceImpactMs >= 0) {
         drawFloorBurst(
           ctx,
@@ -1002,7 +973,7 @@ function createDynamiteBlastEffect(
         );
       }
       // Embers last so they layer on top of flame and smoke.
-      drawEmbers(ctx, column, embers, blastElapsedMs, cellSize, canvasHeight);
+      drawEmbers(ctx, column, embers, elapsedMs, cellSize, canvasHeight);
     },
   };
 }
@@ -1012,44 +983,6 @@ function pickEmberHue(): 'yellow' | 'orange' | 'red' {
   if (r < 0.35) return 'yellow';
   if (r < 0.85) return 'orange';
   return 'red';
-}
-
-function drawFuseSpark(
-  ctx: CanvasRenderingContext2D,
-  column: number,
-  row: number,
-  elapsedMs: number,
-  cellSize: number,
-  canvasHeight: number,
-): void {
-  // Spark travels along the fuse — start at the curling tip (slightly
-  // above and to the right of the cell), end at the body. The travel
-  // is small but it sells "fuse burning down".
-  const t = clamp01(elapsedMs / FUSE_DURATION_MS);
-  const startX = (column + 0.7) * cellSize;
-  const startY = canvasHeight - (row + 1.05) * cellSize;
-  const endX = (column + 0.5) * cellSize;
-  const endY = canvasHeight - (row + 0.7) * cellSize;
-  const cx = lerp(startX, endX, t);
-  const cy = lerp(startY, endY, t);
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const grad = ctx.createRadialGradient(
-    cx,
-    cy,
-    0,
-    cx,
-    cy,
-    FUSE_SPARK_RADIUS_PX * 4,
-  );
-  grad.addColorStop(0, 'rgba(255, 255, 220, 1)');
-  grad.addColorStop(0.45, 'rgba(255, 200, 80, 0.7)');
-  grad.addColorStop(1, 'rgba(255, 140, 0, 0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, FUSE_SPARK_RADIUS_PX * 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
 }
 
 function drawFireball(

@@ -216,16 +216,14 @@ function landActive(state: State, active: ActivePiece): LandResult {
       };
     }
     case 'dynamite': {
-      // The dynamite is never a Cell — it falls, lights its fuse, and
-      // is consumed by its own blast. Two steps cover the journey: a
-      // solo-land tween onto an unchanged board (the dynamite is a
-      // visual placeholder at landingRow during the fuse phase, owned
-      // by the dynamite-blast effect's prevSnapshot), then the
-      // dynamite-blast that clears the column from row 0 up to and
-      // including landingRow. TODO(busser): when detonator triggering
-      // lands, intercept the case where the dynamite would settle
-      // directly above a detonator — the detonator triggers first and
-      // destroys the dynamite before its fuse can light.
+      // The dynamite is never a Cell — it falls and is consumed by
+      // its own blast. Two steps cover the journey: a solo-land tween
+      // onto an unchanged board, then the dynamite-blast that clears
+      // the column from row 0 up to and including landingRow.
+      // TODO(busser): when detonator triggering lands, intercept the
+      // case where the dynamite would settle directly above a
+      // detonator — the detonator triggers first and destroys the
+      // dynamite before it can explode.
       const landingRow = lowestEmptyRow(state.board, active.column);
       const soloSnapshot: State = { ...state, active: null };
       const blastBoard = clearColumnSegment(
