@@ -66,8 +66,24 @@ Field semantics:
 - **`cell_height_px`** — height in source pixels of that
   rectangular region.
 
-The **cell-footprint rectangle** is implicitly defined by these
-three values:
+### Optional fields
+
+Some sprites carry additional source-pixel points the renderer uses
+beyond basic placement. These fields are optional and absent on
+sprites that don't need them:
+
+- **`fuse_tip`** — `[x, y]` source-pixel coordinates of the
+  dynamite's lit fuse tip. The renderer uses this as the emission
+  point for fuse spark and smoke particles, mapping it to screen
+  space with the same scale and anchor offset as the rest of the
+  sprite, so the emission point stays pinned to the fuse as the
+  dynamite shifts and falls. Today only `special-dynamite` carries
+  this field.
+
+### The cell-footprint rectangle
+
+The cell-footprint rectangle is implicitly defined by the three
+placement values above:
 
 - Left edge: `anchor.x − cell_width_px / 2`
 - Right edge: `anchor.x + cell_width_px / 2`
@@ -156,6 +172,15 @@ function drawSpriteAtCell(
   );
 }
 ```
+
+The shared module also exports a companion helper,
+`spriteSourcePointToScreen(sprite, source, cell_x, cell_y, cell_size)`,
+which applies the same scale and anchor offset to map any
+source-pixel point on the sprite to its on-screen position. The
+renderer uses it for optional attachment points like the dynamite's
+`fuse_tip`, so particle emission stays pinned to the sprite under
+movement and scaling. Like `drawSpriteAtCell`, this helper lives in
+the shared module so the game and the authoring tool stay in sync.
 
 This function is the **single source of truth** for sprite
 rendering. The game's render loop calls it for every visible cell.
@@ -354,7 +379,7 @@ metadata, defaults will be used."
 The selected sprite's PNG is displayed at its native resolution,
 on a checkered background suggesting transparency.
 
-Three overlays are drawn on top:
+Four overlays are drawn on top:
 
 - **Image bounds** — a thin border around the entire PNG, so the
   human sees what's inside vs. outside the source image.
@@ -366,11 +391,18 @@ Three overlays are drawn on top:
   semi-opaque colored fill (e.g., translucent yellow) and a clear
   border. This rectangle is the visualization of "what part of
   the source image will fit inside one cell on screen."
+- **Fuse-tip marker (optional)** — a small orange ring at the
+  `fuse_tip` source-pixel coordinate, drawn only on sprites that
+  declare this optional field. Visually distinct from the anchor
+  crosshair so the two points don't read as the same kind of thing.
 
 The overlays are interactive:
 
-- **Click on the source image** sets the anchor to the clicked
-  pixel. The crosshair moves immediately.
+- **Click on the source image** sets the chosen point to the
+  clicked pixel. A "Click sets" toggle in the toolbar picks
+  whether that point is the anchor (default) or the fuse tip,
+  so adding a fuse tip is opt-in and the existing
+  click-to-set-anchor behavior is preserved.
 - **Drag the corners of the cell-footprint rectangle** resizes it,
   updating `cell_width_px` and `cell_height_px`. The rectangle
   remains anchored at the anchor point, so dragging the
@@ -392,6 +424,12 @@ Below the source image, four numeric input fields:
 Each field is bidirectionally bound to the visual overlay: typing
 in a field updates the overlay; manipulating the overlay updates
 the field. Changes from either source persist immediately.
+
+For optional fields, a separate row holds a "Has fuse tip"
+checkbox plus `fuse_tip.x` and `fuse_tip.y` numeric inputs. The
+checkbox toggles the field on or off for the current sprite, so
+sprites without a fuse tip stay clean in the JSON; the inputs are
+disabled while the field is absent.
 
 ### Preview panel
 
