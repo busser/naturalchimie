@@ -191,133 +191,154 @@ function assetForCell(
     : sprites.byTier[cell.tier];
 }
 
+// Visual cell positions of the active piece's halves at the current
+// frame, paired with the active piece whose sprites should be drawn.
+// Position math is shared with the fuse particle subsystem so its
+// emitter pins to the same point the sprite pipeline draws.
+export type ActiveRenderHalves = {
+  readonly active: ActivePiece;
+  readonly positions: readonly HalfPosition[];
+};
+
+type HalfPosition = { readonly col: number; readonly row: number };
+
 // During the spawn step the committed snapshot still has `active:
 // null` (post-land) — the new piece only commits at step end. Read it
 // from the in-flight step's snapshot and slide it down from above the
 // canvas. Outside spawn, fall through to the existing rules, which
 // expect a non-null committed active.
+export function activeRenderHalves(
+  state: State,
+  inflight: InFlight | null,
+): ActiveRenderHalves | null {
+  if (inflight !== null && inflight.step.event.kind === 'spawn') {
+    const next = inflight.step.snapshot.active;
+    if (next === null) return null;
+    const positions = spawnSlidePositions(next, inflight.t);
+    if (positions.length === 0) return null;
+    return { active: next, positions };
+  }
+  if (state.active === null) return null;
+  return activeRenderHalvesAtMoment(state.active, inflight);
+}
+
 function activeHalves(
   state: State,
   inflight: InFlight | null,
   sprites: SpriteAtlas,
 ): RenderItem[] {
-  if (inflight !== null && inflight.step.event.kind === 'spawn') {
-    const next = inflight.step.snapshot.active;
-    if (next === null) return [];
-    return spawnSlideHalves(next, inflight.t, sprites);
-  }
-  if (state.active === null) return [];
-  return activeHalvesAtMoment(state.active, inflight, sprites);
+  const render = activeRenderHalves(state, inflight);
+  if (render === null) return [];
+  const halfSprites = spritesForHalves(render.active, sprites);
+  return render.positions.map((pos, i) => ({
+    sprite: halfSprites[i],
+    col: pos.col,
+    row: pos.row,
+  }));
 }
 
-function spawnSlideHalves(
-  next: ActivePiece,
-  t: number,
-  sprites: SpriteAtlas,
-): RenderItem[] {
-  // Phase 1: prev preview is sliding out of the recess; nothing on the
-  // playfield yet so the eye sees one piece at a time.
-  if (t < SPAWN_PHASE_OUT_END_T) return [];
-  const halves = staticHalves(next, sprites);
-  // Phase 3: piece has settled at the spawn row; new preview is
-  // sliding into the recess.
-  if (t >= SPAWN_PHASE_DOWN_END_T) return halves;
-  // Phase 2: piece slides from above the canvas to the spawn row.
-  const phaseT =
-    (t - SPAWN_PHASE_OUT_END_T) / (SPAWN_PHASE_DOWN_END_T - SPAWN_PHASE_OUT_END_T);
-  const eased = easeInOut(phaseT);
-  const rowOffset = (1 - eased) * SPAWN_ENTRY_OFFSET_CELLS;
-  return halves.map((h) => ({ ...h, row: h.row + rowOffset }));
-}
-
-function activeHalvesAtMoment(
+function activeRenderHalvesAtMoment(
   committedActive: ActivePiece,
   inflight: InFlight | null,
-  sprites: SpriteAtlas,
-): RenderItem[] {
-  if (inflight === null) return staticHalves(committedActive, sprites);
+): ActiveRenderHalves {
+  if (inflight === null) {
+    return { active: committedActive, positions: staticPositions(committedActive) };
+  }
   const prev = inflight.prevSnapshot.active;
-  if (prev === null) return staticHalves(committedActive, sprites);
+  if (prev === null) {
+    return { active: committedActive, positions: staticPositions(committedActive) };
+  }
   const next = inflight.step.snapshot.active;
   switch (inflight.step.event.kind) {
     case 'pair-shift':
-      if (next === null) return staticHalves(committedActive, sprites);
-      return shiftHalves(prev, next, easeOut(inflight.t), sprites);
+      if (next === null) {
+        return { active: committedActive, positions: staticPositions(committedActive) };
+      }
+      return { active: prev, positions: shiftPositions(prev, next, easeOut(inflight.t)) };
     case 'pair-rotate':
-      if (next === null) return staticHalves(committedActive, sprites);
-      return rotateHalves(prev, next, easeOut(inflight.t), sprites);
+      if (next === null) {
+        return { active: committedActive, positions: staticPositions(committedActive) };
+      }
+      return { active: prev, positions: rotatePositions(prev, next, easeOut(inflight.t)) };
     case 'pair-land':
       // pair-land's next snapshot has `active: null` by design — the
       // piece is in the air during the fall and the board picks it up
       // at commit. Render from the prev pair plus the step's payload.
-      return landHalves(prev, inflight.step, inflight.t, sprites);
+      return { active: prev, positions: landPositions(prev, inflight.step, inflight.t) };
     case 'solo-land':
-      return soloLandHalves(
-        prev,
-        inflight.step.event.landingRow,
-        inflight.t,
-        sprites,
-      );
+      return {
+        active: prev,
+        positions: soloLandPositions(prev, inflight.step.event.landingRow, inflight.t),
+      };
     default:
-      return staticHalves(committedActive, sprites);
+      return { active: committedActive, positions: staticPositions(committedActive) };
   }
 }
 
-function staticHalves(active: ActivePiece, sprites: SpriteAtlas): RenderItem[] {
+function spritesForHalves(
+  active: ActivePiece,
+  sprites: SpriteAtlas,
+): SpriteAsset[] {
+  switch (active.kind) {
+    case 'pair':
+      return [sprites.byTier[active.first], sprites.byTier[active.second]];
+    case 'dynamite':
+      return [sprites.dynamite];
+    case 'detonator':
+      return [sprites.detonator];
+  }
+}
+
+function staticPositions(active: ActivePiece): HalfPosition[] {
   switch (active.kind) {
     case 'pair':
       if (active.orientation === 'horizontal') {
         return [
-          {
-            sprite: sprites.byTier[active.first],
-            col: active.column,
-            row: SPAWN_ROW,
-          },
-          {
-            sprite: sprites.byTier[active.second],
-            col: active.column + 1,
-            row: SPAWN_ROW,
-          },
+          { col: active.column, row: SPAWN_ROW },
+          { col: active.column + 1, row: SPAWN_ROW },
         ];
       }
       // Vertical pair in the spawn area: half-row offsets so the
       // rotation center stays put. By convention first = bottom,
       // second = top (see state.ts). Bottom is the lower row index.
       return [
-        {
-          sprite: sprites.byTier[active.first],
-          col: active.column,
-          row: SPAWN_ROW - 0.5,
-        },
-        {
-          sprite: sprites.byTier[active.second],
-          col: active.column,
-          row: SPAWN_ROW + 0.5,
-        },
+        { col: active.column, row: SPAWN_ROW - 0.5 },
+        { col: active.column, row: SPAWN_ROW + 0.5 },
       ];
     case 'dynamite':
-      return [{ sprite: sprites.dynamite, col: active.column, row: SPAWN_ROW }];
     case 'detonator':
-      return [
-        { sprite: sprites.detonator, col: active.column, row: SPAWN_ROW },
-      ];
+      return [{ col: active.column, row: SPAWN_ROW }];
   }
+}
+
+function spawnSlidePositions(next: ActivePiece, t: number): HalfPosition[] {
+  // Phase 1: prev preview is sliding out of the recess; nothing on the
+  // playfield yet so the eye sees one piece at a time.
+  if (t < SPAWN_PHASE_OUT_END_T) return [];
+  const positions = staticPositions(next);
+  // Phase 3: piece has settled at the spawn row; new preview is
+  // sliding into the recess.
+  if (t >= SPAWN_PHASE_DOWN_END_T) return positions;
+  // Phase 2: piece slides from above the canvas to the spawn row.
+  const phaseT =
+    (t - SPAWN_PHASE_OUT_END_T) / (SPAWN_PHASE_DOWN_END_T - SPAWN_PHASE_OUT_END_T);
+  const eased = easeInOut(phaseT);
+  const rowOffset = (1 - eased) * SPAWN_ENTRY_OFFSET_CELLS;
+  return positions.map((p) => ({ col: p.col, row: p.row + rowOffset }));
 }
 
 // Linear lerp on column/row. Shift and rotate both preserve sprite
 // identity at each index, so a positional lerp matches by index.
-function shiftHalves(
+function shiftPositions(
   prev: ActivePiece,
   next: ActivePiece,
   easedT: number,
-  sprites: SpriteAtlas,
-): RenderItem[] {
-  const fromHalves = staticHalves(prev, sprites);
-  const toHalves = staticHalves(next, sprites);
-  return fromHalves.map((from, i) => ({
-    sprite: from.sprite,
-    col: lerp(from.col, toHalves[i].col, easedT),
-    row: lerp(from.row, toHalves[i].row, easedT),
+): HalfPosition[] {
+  const fromPositions = staticPositions(prev);
+  const toPositions = staticPositions(next);
+  return fromPositions.map((from, i) => ({
+    col: lerp(from.col, toPositions[i].col, easedT),
+    row: lerp(from.row, toPositions[i].row, easedT),
   }));
 }
 
@@ -327,16 +348,13 @@ function shiftHalves(
 // the rotation center sits on a column boundary, including the
 // spawn position and after a wall-kick). The math lands halves
 // exactly on their post-step positions at t=1.
-function rotateHalves(
+function rotatePositions(
   prev: ActivePiece,
   next: ActivePiece,
   easedT: number,
-  sprites: SpriteAtlas,
-): RenderItem[] {
-  if (prev.kind !== 'pair' || next.kind !== 'pair') {
-    return staticHalves(prev, sprites);
-  }
-  const fromHalves = staticHalves(prev, sprites);
+): HalfPosition[] {
+  if (prev.kind !== 'pair' || next.kind !== 'pair') return staticPositions(prev);
+  const fromPositions = staticPositions(prev);
   const cFrom = pairMidpoint(prev);
   const cTo = pairMidpoint(next);
   const angle = (Math.PI / 2) * easedT;
@@ -344,13 +362,12 @@ function rotateHalves(
   const sinA = Math.sin(angle);
   const cCol = lerp(cFrom.col, cTo.col, easedT);
   const cRow = lerp(cFrom.row, cTo.row, easedT);
-  return fromHalves.map((from) => {
+  return fromPositions.map((from) => {
     const dC = from.col - cFrom.col;
     const dR = from.row - cFrom.row;
     // 90° CW rotation in (col, row) where row points up:
     //   (Δc, Δr) → (Δc·cos + Δr·sin, -Δc·sin + Δr·cos)
     return {
-      sprite: from.sprite,
       col: cCol + dC * cosA + dR * sinA,
       row: cRow - dC * sinA + dR * cosA,
     };
@@ -370,16 +387,15 @@ function pairMidpoint(active: ActivePiece): { col: number; row: number } {
 // half finishes. (An earlier version scaled `t` per half, which made
 // the shorter half move faster instead of just stopping earlier —
 // halves looked like they obeyed different gravity.)
-function landHalves(
+function landPositions(
   prev: ActivePiece,
   step: Step,
   t: number,
-  sprites: SpriteAtlas,
-): RenderItem[] {
+): HalfPosition[] {
   if (prev.kind !== 'pair' || step.event.kind !== 'pair-land') {
-    return staticHalves(prev, sprites);
+    return staticPositions(prev);
   }
-  const fromHalves = staticHalves(prev, sprites);
+  const fromPositions = staticPositions(prev);
   const firstColumn = prev.column;
   const secondColumn =
     prev.orientation === 'horizontal' ? prev.column + 1 : prev.column;
@@ -387,32 +403,29 @@ function landHalves(
     { col: firstColumn, row: step.event.firstLandingRow },
     { col: secondColumn, row: step.event.secondLandingRow },
   ];
-  const distances = fromHalves.map((from, i) => from.row - targets[i].row);
+  const distances = fromPositions.map((from, i) => from.row - targets[i].row);
   const maxDistance = Math.max(...distances);
   const cellsFallen = easeIn(t) * maxDistance;
-  return fromHalves.map((from, i) => {
+  return fromPositions.map((from, i) => {
     const ownDistance = distances[i];
     const progress =
       ownDistance > 0 ? Math.min(1, cellsFallen / ownDistance) : 1;
     return {
-      sprite: from.sprite,
       col: lerp(from.col, targets[i].col, progress),
       row: lerp(from.row, targets[i].row, progress),
     };
   });
 }
 
-function soloLandHalves(
+function soloLandPositions(
   prev: ActivePiece,
   landingRow: number,
   t: number,
-  sprites: SpriteAtlas,
-): RenderItem[] {
-  if (prev.kind === 'pair') return staticHalves(prev, sprites);
-  const fromHalves = staticHalves(prev, sprites);
+): HalfPosition[] {
+  if (prev.kind === 'pair') return staticPositions(prev);
+  const fromPositions = staticPositions(prev);
   const eased = easeIn(t);
-  return fromHalves.map((from) => ({
-    sprite: from.sprite,
+  return fromPositions.map((from) => ({
     col: from.col,
     row: lerp(from.row, landingRow, eased),
   }));
