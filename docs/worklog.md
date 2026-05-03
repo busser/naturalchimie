@@ -3,6 +3,50 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Tuned the merge animation by feel
+
+Two tweaks after watching the merge play live. First, the bubbles
+weren't traveling far enough from their origin cells — the swarm
+read more as "ripple" than "fly out and converge". The Bezier
+control point sits at `cell + scatterDir * scatterDistance`, and
+since the curve's initial velocity is `2·(P1 − P0)`, scatter
+distance directly governs how energetically a bubble launches.
+Pushed `BUBBLE_SCATTER_DISTANCE_*` from 0.7–1.3 cells to 1.1–2.0,
+which gives each bubble a more confident outward arc before it
+curves back to landing.
+
+Second, the whole sequence felt rushed. Scaled all merge phase
+timings by ~1.4x: shine 100→140 ms, bubble travel 200–340→280–480
+ms, orb pulse 120→170 ms, pop 70→100 ms, droplet scatter 180→250
+ms. `MERGE_DURATION_MS` follows from the worst-case sum and went
+690→970 ms.
+
+## 2026-05-03 — Scattered droplets off the merge pop
+
+The merge pop was satisfying but the new tier sprite still snapped in
+cold: the orb went from 1.55× swelled to gone in one frame, and the
+sprite appeared at full size on the next. Functional, but the bubble
+metaphor stopped at the pop.
+
+Added a ring of small additive-glow droplets that emit at popEndMs
+and scatter outward with a slight gravity sag, fading over 180 ms.
+Same `drawBubble` glow primitive as the in-flight bubbles, just sized
+smaller (2.5–4 px vs 4–6 px) so they read as droplets rather than
+more bubbles. The first pass had them growing out of the landing
+center, which read as "the orb is still leaking" rather than "it
+just burst" — a real soap bubble's beads scatter from the membrane,
+not the core. Reshaped emission to start at the orb's pop-end
+perimeter (reusing the orb's own size formula, `POP_PEAK_SCALE ×
+(CENTRAL_ORB_BASE_RADIUS_PX + CENTRAL_ORB_GROWTH_PX × √bubbleCount)`),
+so the ring scales with merge size — a 5-cell merge throws a wider
+initial ring than a 3-cell one — and droplets travel 0.7–1.2 cells
+outward *from* that perimeter.
+
+`MERGE_DURATION_MS` bumped from 510 to 690 to fit the droplet tail.
+The new sprite is rendered via `getSpriteItems` from popEndMs
+onward, so it's already on screen at full size while the droplets
+fan out above it via the additive `lighter` pass.
+
 ## 2026-05-03 — Folded cascade-effect sprites into the row sort
 
 Cascade resolution had a subtle z-ordering bug. The board pass sorts

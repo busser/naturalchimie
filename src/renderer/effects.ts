@@ -1,9 +1,10 @@
 // Renders animated effects for cascade-stage steps. Today: the merge
 // (shine → bubbles fly in arcs to landing → central orb grows in
-// bumps → orb pops, new sprite snaps in) and gravity (cells slide
-// down to repack their column). The playfield asks for an Effect
-// when the in-flight step changes, removes effect.skipCells from its
-// normal board pass, and calls effect.draw on top.
+// bumps → orb pops, droplets scatter around the new sprite) and
+// gravity (cells slide down to repack their column). The playfield
+// asks for an Effect when the in-flight step changes, removes
+// effect.skipCells from its normal board pass, and calls effect.draw
+// on top.
 //
 // Each effect captures its own startNow so it can read elapsed time
 // directly from the frame's `now`, independent of the driver's `t`.
@@ -40,22 +41,30 @@ import type { Movement, ReactingGroup, State, Step } from '../core/state';
 // group.lastArrivalMs..+POP_DURATION_MS      — central orb swells and
 //                                              snaps off
 // group.lastArrivalMs + POP_DURATION_MS      — new tier sprite snaps in
-//                                              at full size
+//                                              at full size; droplets
+//                                              emit from the orb's
+//                                              pop-end perimeter as if
+//                                              its membrane just burst
+// group.lastArrivalMs + POP_DURATION_MS
+//   ..+DROPLET_LIFETIME_MS                   — droplets scatter outward
+//                                              with a slight gravity sag
+//                                              and fade out
 //
 // MERGE_DURATION_MS in driver.ts is sized to fit the worst case:
-// SHINE_DURATION_MS + BUBBLE_TRAVEL_MAX_MS + POP_DURATION_MS.
+// SHINE_DURATION_MS + BUBBLE_TRAVEL_MAX_MS + POP_DURATION_MS +
+// DROPLET_LIFETIME_MS.
 
-const SHINE_DURATION_MS = 100;
+const SHINE_DURATION_MS = 140;
 
 const BUBBLES_PER_CELL = 4;
-const BUBBLE_TRAVEL_MIN_MS = 200;
-const BUBBLE_TRAVEL_MAX_MS = 340;
+const BUBBLE_TRAVEL_MIN_MS = 280;
+const BUBBLE_TRAVEL_MAX_MS = 480;
 // The Bezier control point sits at cell + scatterDir * scatterDistance.
 // The visible apex of the curve is roughly halfway between cell and
 // the control point, so this number is the "how far does P1 push out"
 // rather than "how far the bubble travels outward".
-const BUBBLE_SCATTER_DISTANCE_MIN_CELLS = 0.7;
-const BUBBLE_SCATTER_DISTANCE_MAX_CELLS = 1.3;
+const BUBBLE_SCATTER_DISTANCE_MIN_CELLS = 1.1;
+const BUBBLE_SCATTER_DISTANCE_MAX_CELLS = 2.0;
 const BUBBLE_BASE_RADIUS_MIN_PX = 4.0;
 const BUBBLE_BASE_RADIUS_MAX_PX = 6.0;
 const BUBBLE_HALO_RADIUS_FACTOR = 2.5;
@@ -71,11 +80,31 @@ const CENTRAL_ORB_GROWTH_PX = 2.8;
 const CENTRAL_ORB_HALO_RADIUS_FACTOR = 2.0;
 // Each arrival kicks a transient size pulse on the central orb so the
 // merge bumps are visible. Pulses from concurrent arrivals sum.
-const CENTRAL_ORB_PULSE_DURATION_MS = 120;
+const CENTRAL_ORB_PULSE_DURATION_MS = 170;
 const CENTRAL_ORB_PULSE_AMOUNT = 0.32;
 
-const POP_DURATION_MS = 70;
+const POP_DURATION_MS = 100;
 const POP_PEAK_SCALE = 1.55;
+
+// Droplets sell the "soap bubble pop" feel: when the orb snaps off,
+// a ring of small bright points scatters outward, sags slightly under
+// gravity, and fades. Count is fixed (not scaled with merge size) —
+// the orb's own radius already grows with cell count, so droplet
+// parity isn't perceivable, and a fixed budget keeps overdraw bounded.
+const DROPLET_COUNT_PER_GROUP = 10;
+const DROPLET_LIFETIME_MS = 250;
+// Travel distance is measured outward *from the orb's perimeter*, not
+// from its center — droplets fly off the membrane.
+const DROPLET_SCATTER_DISTANCE_MIN_CELLS = 0.7;
+const DROPLET_SCATTER_DISTANCE_MAX_CELLS = 1.2;
+// Smaller than bubbles (4–6 px) so they read as "tiny droplets",
+// not "more bubbles".
+const DROPLET_BASE_RADIUS_MIN_PX = 2.5;
+const DROPLET_BASE_RADIUS_MAX_PX = 4.0;
+// Downward sag at end of life, in cell units. Small — droplets are
+// flying outward, not falling.
+const DROPLET_GRAVITY_CELLS = 0.18;
+const DROPLET_SHRINK_FACTOR = 0.35;
 
 const SHINE_HALO_RADIUS_FACTOR = 0.7;
 
@@ -142,9 +171,17 @@ type Bubble = {
   readonly hue: 'white' | 'pale-yellow';
 };
 
+type Droplet = {
+  readonly angleRad: number;
+  readonly scatterDistanceCells: number;
+  readonly baseRadiusPx: number;
+  readonly hue: 'white' | 'pale-yellow';
+};
+
 type GroupState = {
   readonly group: ReactingGroup;
   readonly bubbles: readonly Bubble[];
+  readonly droplets: readonly Droplet[];
   readonly lastArrivalMs: number;
 };
 
@@ -203,6 +240,11 @@ function createMergeEffect(
       for (const state of states) {
         drawCentralOrbAndPop(ctx, state, elapsedMs, cellSize, canvasHeight);
       }
+      // Droplets scatter from the landing center after the pop. Drawn
+      // last so they layer above the new tier sprite.
+      for (const state of states) {
+        drawDroplets(ctx, state, elapsedMs, cellSize, canvasHeight);
+      }
     },
   };
 }
@@ -254,7 +296,30 @@ function seedGroupStates(groups: readonly ReactingGroup[]): GroupState[] {
     for (const bubble of bubbles) {
       if (bubble.arrivalMs > lastArrivalMs) lastArrivalMs = bubble.arrivalMs;
     }
-    states.push({ group, bubbles, lastArrivalMs });
+    const droplets: Droplet[] = [];
+    // Same fan-and-jitter pattern as bubbles so droplets don't grid up.
+    const dropletBaseAngle = Math.random() * Math.PI * 2;
+    for (let i = 0; i < DROPLET_COUNT_PER_GROUP; i++) {
+      const angle =
+        dropletBaseAngle +
+        (i * (Math.PI * 2)) / DROPLET_COUNT_PER_GROUP +
+        (Math.random() - 0.5) * 0.5;
+      droplets.push({
+        angleRad: angle,
+        scatterDistanceCells: lerp(
+          DROPLET_SCATTER_DISTANCE_MIN_CELLS,
+          DROPLET_SCATTER_DISTANCE_MAX_CELLS,
+          Math.random(),
+        ),
+        baseRadiusPx: lerp(
+          DROPLET_BASE_RADIUS_MIN_PX,
+          DROPLET_BASE_RADIUS_MAX_PX,
+          Math.random(),
+        ),
+        hue: Math.random() < 0.55 ? 'white' : 'pale-yellow',
+      });
+    }
+    states.push({ group, bubbles, droplets, lastArrivalMs });
   }
   return states;
 }
@@ -440,6 +505,55 @@ function drawCentralOrb(
   ctx.beginPath();
   ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawDroplets(
+  ctx: CanvasRenderingContext2D,
+  state: GroupState,
+  elapsedMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  const { group, droplets, lastArrivalMs } = state;
+  const popEndMs = lastArrivalMs + POP_DURATION_MS;
+  const dropletEndMs = popEndMs + DROPLET_LIFETIME_MS;
+  if (elapsedMs < popEndMs || elapsedMs >= dropletEndMs) return;
+  const t01 = (elapsedMs - popEndMs) / DROPLET_LIFETIME_MS;
+  // Outward motion eases out: shoot fast at the moment of pop, settle
+  // toward the end of life.
+  const u = 1 - (1 - t01) * (1 - t01);
+  // Quadratic fade so droplets are bright early, gone cleanly at end.
+  const alpha = (1 - t01) * (1 - t01);
+  const radiusFactor = 1 - DROPLET_SHRINK_FACTOR * t01;
+  const sag = DROPLET_GRAVITY_CELLS * t01 * t01 * cellSize;
+  const cx = (group.landing.column + 0.5) * cellSize;
+  const cy = canvasHeight - (group.landing.row + 0.5) * cellSize;
+  // Orb radius at popEndMs: every bubble has arrived (so arrivedCount
+  // equals bubbles.length), the pulse contribution has effectively
+  // decayed, and the swell has reached POP_PEAK_SCALE. Reusing the
+  // orb's own formula keeps the droplet emission ring tied to the
+  // visible membrane the player just saw burst.
+  const orbPopRadiusPx =
+    POP_PEAK_SCALE *
+    (CENTRAL_ORB_BASE_RADIUS_PX +
+      CENTRAL_ORB_GROWTH_PX * Math.sqrt(state.bubbles.length));
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const droplet of droplets) {
+    const dist =
+      orbPopRadiusPx + u * droplet.scatterDistanceCells * cellSize;
+    const x = cx + Math.cos(droplet.angleRad) * dist;
+    const y = cy - Math.sin(droplet.angleRad) * dist + sag;
+    drawBubble(
+      ctx,
+      x,
+      y,
+      droplet.baseRadiusPx * radiusFactor,
+      alpha,
+      droplet.hue,
+    );
+  }
+  ctx.restore();
 }
 
 // Gravity --------------------------------------------------------

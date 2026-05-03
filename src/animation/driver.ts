@@ -15,11 +15,13 @@ const ROTATE_DURATION_MS = 200;
 const FALL_MS_PER_CELL = 50;
 // 05-animations.md gives 200 ms (white bloom) + 150 ms (new element
 // fade-in) as starting values. The renderer's effects.ts uses this
-// budget for shine (~100 ms) + bubble travel (~340 ms peak) + pop
-// (~70 ms): each cell shines, pops into bubbles of light, those
-// converge and merge into a growing central orb that pops to reveal
-// the new tier sprite. See effects.ts for the timeline.
-export const MERGE_DURATION_MS = 510;
+// budget for shine (~140 ms) + bubble travel (~480 ms peak) + pop
+// (~100 ms) + droplet scatter (~250 ms): each cell shines, pops into
+// bubbles of light, those converge and merge into a growing central
+// orb that pops to reveal the new tier sprite, with a final ring of
+// droplets fanning out as if the orb's membrane just burst. See
+// effects.ts for the timeline.
+export const MERGE_DURATION_MS = 970;
 // Per 05-animations.md "Gravity fall": 50 ms per cell of fall
 // distance, all columns animating in parallel. The 80 ms
 // "inter-cascade pause" lives at the end of the gravity step — the
