@@ -29,6 +29,7 @@ import {
   type Effect,
   type RenderItem,
 } from './effects';
+import { createFuseParticles, type FuseParticles } from './fuse';
 
 const BOARD_WIDTH = 7;
 const VISIBLE_ROWS = 12;
@@ -71,6 +72,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
   // identity is enough to detect transitions.
   let effect: Effect | null = null;
   let effectStep: Step | null = null;
+  // Fuse particles span the dynamite's whole life as the active piece
+  // — spawn-slide, shifts, drop — so it's owned across frames rather
+  // than rebuilt per step. Live particles fade out naturally between
+  // dynamites; the emitter starts/stops based on the active-piece
+  // kind each frame.
+  const fuse: FuseParticles = createFuseParticles();
 
   return {
     draw(now: number) {
@@ -92,8 +99,18 @@ export function createRenderer(deps: RendererDeps): Renderer {
       // extrudes outside cell bounds (potion necks, apple stems), so
       // mid-fall and post-pop sprites need to participate in this
       // sort or they cover extrusions of the cells below them.
+      const render = activeRenderHalves(state, inflight);
       const items = collectBoardItems(state.board, sprites, effect?.skipCells);
-      items.push(...activeHalves(state, inflight, sprites));
+      if (render !== null) {
+        const halfSprites = spritesForHalves(render.active, sprites);
+        for (let i = 0; i < render.positions.length; i++) {
+          items.push({
+            sprite: halfSprites[i],
+            col: render.positions[i].col,
+            row: render.positions[i].row,
+          });
+        }
+      }
       if (effect !== null && inflight !== null) {
         items.push(
           ...effect.getSpriteItems(now, inflight.prevSnapshot, sprites),
@@ -113,6 +130,15 @@ export function createRenderer(deps: RendererDeps): Renderer {
           cssHeight,
         );
       }
+      // Fuse runs after sprites + effects so glow, sparks, and smoke
+      // layer on top. Dynamite-blast and detonator detonations clear
+      // the active piece before they begin, so passing null here is
+      // what naturally stops emission at the start of the blast.
+      const fuseCell =
+        render !== null && render.active.kind === 'dynamite'
+          ? render.positions[0]
+          : null;
+      fuse.update(now, fuseCell, sprites, ctx, cellSize, cssHeight);
     },
   };
 }
@@ -220,21 +246,6 @@ export function activeRenderHalves(
   }
   if (state.active === null) return null;
   return activeRenderHalvesAtMoment(state.active, inflight);
-}
-
-function activeHalves(
-  state: State,
-  inflight: InFlight | null,
-  sprites: SpriteAtlas,
-): RenderItem[] {
-  const render = activeRenderHalves(state, inflight);
-  if (render === null) return [];
-  const halfSprites = spritesForHalves(render.active, sprites);
-  return render.positions.map((pos, i) => ({
-    sprite: halfSprites[i],
-    col: pos.col,
-    row: pos.row,
-  }));
 }
 
 function activeRenderHalvesAtMoment(
