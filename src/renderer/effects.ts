@@ -15,10 +15,7 @@
 
 import { GRAVITY_MS_PER_CELL } from '../animation/driver';
 import type { SpriteAtlas } from '../assets/sprite-loader';
-import {
-  drawSpriteAtCell,
-  type SpriteAsset,
-} from '../assets/sprite-renderer';
+import type { SpriteAsset } from '../assets/sprite-renderer';
 import type { Movement, ReactingGroup, State, Step } from '../core/state';
 
 // Merge animation phases ----------------------------------------
@@ -82,10 +79,28 @@ const POP_PEAK_SCALE = 1.55;
 
 const SHINE_HALO_RADIUS_FACTOR = 0.7;
 
+export type RenderItem = {
+  readonly sprite: SpriteAsset;
+  readonly col: number;
+  readonly row: number;
+};
+
 export type Effect = {
   // Cells whose normal board rendering must be skipped — the effect
-  // draws them itself (shining sprites, bubbles, orbs, falling cells).
+  // owns them either as sprite items (shining originals, post-pop
+  // new tier, falling cells) or as glow (bubbles, orbs).
   readonly skipCells: ReadonlySet<string>;
+  // Sprite-bound items at their current visual rows. Folded into the
+  // playfield's row-descending sort so extruding sprite art occludes
+  // correctly across board / falling / merging sprites.
+  getSpriteItems(
+    now: number,
+    prevSnapshot: State,
+    sprites: SpriteAtlas,
+  ): readonly RenderItem[];
+  // Additive glow (halos, bubbles, central orbs). Drawn after the
+  // sorted sprite pass — these read as light, not occluding shapes,
+  // so they don't need to participate in the sort.
   draw(
     ctx: CanvasRenderingContext2D,
     now: number,
@@ -146,38 +161,47 @@ function createMergeEffect(
   const states = seedGroupStates(groups);
   return {
     skipCells,
-    draw(ctx, now, _prev, sprites, cellSize, canvasHeight) {
+    getSpriteItems(now, _prev, sprites) {
       const elapsedMs = now - startNow;
-      // Original sprites shining at their cells (during shine phase only).
-      if (elapsedMs < SHINE_DURATION_MS) {
-        for (const state of states) {
-          drawShine(
-            ctx,
-            state.group,
-            elapsedMs,
-            sprites,
-            cellSize,
-            canvasHeight,
-          );
+      const items: RenderItem[] = [];
+      for (const state of states) {
+        const popEndMs = state.lastArrivalMs + POP_DURATION_MS;
+        if (elapsedMs >= popEndMs) {
+          // Phase 4: new tier sprite snapped in at landing.
+          items.push({
+            sprite: sprites.byTier[state.group.tierAfter],
+            col: state.group.landing.column,
+            row: state.group.landing.row,
+          });
+        } else if (elapsedMs < SHINE_DURATION_MS) {
+          // Phase 1: originals still at their cells, shining.
+          const sprite = sprites.byTier[state.group.tierBefore];
+          for (const cell of state.group.cells) {
+            items.push({ sprite, col: cell.column, row: cell.row });
+          }
         }
       }
-      // Bubbles in flight (drawn first so the central orb sits on top
-      // of any late-arriving ones converging into it).
+      return items;
+    },
+    draw(ctx, now, _prev, _sprites, cellSize, canvasHeight) {
+      const elapsedMs = now - startNow;
+      // Halos behind the shining originals. Drawn after sprites with
+      // `lighter` composite — the sprite reads as lit up rather than
+      // occluded.
+      if (elapsedMs < SHINE_DURATION_MS) {
+        for (const state of states) {
+          drawShineHalos(ctx, state.group, elapsedMs, cellSize, canvasHeight);
+        }
+      }
+      // Bubbles in flight (drawn before the orb so late arrivals
+      // converge into it visually).
       for (const state of states) {
         drawBubbles(ctx, state, elapsedMs, cellSize, canvasHeight);
       }
-      // Per group: central orb growing in bumps, then pop, then the
-      // new tier sprite. The three are mutually exclusive in time at
-      // a single landing cell — we pick whichever is current.
+      // Central orb growing in bumps, then the pop swell. The new
+      // tier sprite that follows the pop is rendered via getSpriteItems.
       for (const state of states) {
-        drawLandingProgression(
-          ctx,
-          state,
-          elapsedMs,
-          sprites,
-          cellSize,
-          canvasHeight,
-        );
+        drawCentralOrbAndPop(ctx, state, elapsedMs, cellSize, canvasHeight);
       }
     },
   };
@@ -235,31 +259,22 @@ function seedGroupStates(groups: readonly ReactingGroup[]): GroupState[] {
   return states;
 }
 
-function drawShine(
+function drawShineHalos(
   ctx: CanvasRenderingContext2D,
   group: ReactingGroup,
   elapsedMs: number,
-  sprites: SpriteAtlas,
   cellSize: number,
   canvasHeight: number,
 ): void {
-  const sprite = sprites.byTier[group.tierBefore];
   const t = clamp01(elapsedMs / SHINE_DURATION_MS);
   // Halo intensity ramps up faster than linear so the cell looks like
   // it's charging up toward the pop.
   const haloIntensity = t * t;
-  // Subtle scale-up to underline the "filling with energy" feel.
-  const scale = 1 + 0.06 * t;
-  const cellPx = cellSize * scale;
+  if (haloIntensity <= 0) return;
   for (const cell of group.cells) {
     const cx = (cell.column + 0.5) * cellSize;
     const cy = canvasHeight - (cell.row + 0.5) * cellSize;
-    if (haloIntensity > 0) {
-      drawShineHalo(ctx, cx, cy, cellSize, haloIntensity);
-    }
-    const x = cell.column * cellSize - (cellPx - cellSize) / 2;
-    const y = canvasHeight - (cell.row + 1) * cellSize - (cellPx - cellSize) / 2;
-    drawSpriteAtCell(ctx, sprite, x, y, cellPx);
+    drawShineHalo(ctx, cx, cy, cellSize, haloIntensity);
   }
 }
 
@@ -357,25 +372,17 @@ function drawBubble(
   ctx.fill();
 }
 
-function drawLandingProgression(
+function drawCentralOrbAndPop(
   ctx: CanvasRenderingContext2D,
   state: GroupState,
   elapsedMs: number,
-  sprites: SpriteAtlas,
   cellSize: number,
   canvasHeight: number,
 ): void {
   const { group, bubbles, lastArrivalMs } = state;
   const popEndMs = lastArrivalMs + POP_DURATION_MS;
-  // Phase 3: pop is over, new sprite is on screen.
-  if (elapsedMs >= popEndMs) {
-    const sprite = sprites.byTier[group.tierAfter];
-    const x = group.landing.column * cellSize;
-    const y = canvasHeight - (group.landing.row + 1) * cellSize;
-    drawSpriteAtCell(ctx, sprite, x, y, cellSize);
-    return;
-  }
-  // Otherwise the central orb is on screen (or about to be).
+  // Post-pop: new tier sprite is rendered via getSpriteItems.
+  if (elapsedMs >= popEndMs) return;
   let arrivedCount = 0;
   let pulse = 0;
   for (const bubble of bubbles) {
@@ -454,11 +461,11 @@ function createGravityEffect(
   const fallMs = GRAVITY_MS_PER_CELL * maxDistance;
   return {
     skipCells,
-    draw(ctx, now, prev, sprites, cellSize, canvasHeight) {
+    getSpriteItems(now, prev, sprites) {
       const elapsedMs = now - startNow;
       const tween = fallMs === 0 ? 1 : clamp01(elapsedMs / fallMs);
-      const eased = easeIn(tween);
-      const cellsFallen = eased * maxDistance;
+      const cellsFallen = easeIn(tween) * maxDistance;
+      const items: RenderItem[] = [];
       for (const m of movements) {
         const cell = prev.board[m.from.row]?.[m.from.column];
         if (!cell || cell.kind === 'empty') continue;
@@ -470,26 +477,15 @@ function createGravityEffect(
         const ownProgress =
           ownDistance > 0 ? Math.min(1, cellsFallen / ownDistance) : 1;
         const row = lerp(m.from.row, m.to.row, ownProgress);
-        drawSpriteAt(ctx, sprite, m.from.column, row, cellSize, canvasHeight);
+        items.push({ sprite, col: m.from.column, row });
       }
+      return items;
     },
+    draw() {},
   };
 }
 
 // Helpers --------------------------------------------------------
-
-function drawSpriteAt(
-  ctx: CanvasRenderingContext2D,
-  sprite: SpriteAsset,
-  col: number,
-  row: number,
-  cellSize: number,
-  canvasHeight: number,
-): void {
-  const x = col * cellSize;
-  const y = canvasHeight - (row + 1) * cellSize;
-  drawSpriteAtCell(ctx, sprite, x, y, cellSize);
-}
 
 function clamp01(t: number): number {
   if (t < 0) return 0;

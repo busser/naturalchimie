@@ -3,6 +3,40 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Folded cascade-effect sprites into the row sort
+
+Cascade resolution had a subtle z-ordering bug. The board pass sorts
+its sprites by row descending so visually-lower rows render on top of
+higher ones — necessary because sprite art deliberately extrudes
+outside cell bounds (potion necks, apple stems, per the sprite
+renderer contract). But the cascade `Effect.draw(...)` ran *after*
+the sorted pass and drew its own sprites on top of everything,
+bypassing the sort. Falling sprites during gravity rendered in front
+of static cells they shouldn't have, and the new tier sprite that
+snaps in after a merge pop covered upward extrusions of the cell
+below the landing.
+
+Fix is the same shape as the prior `unify renderer z-order across
+board and active piece` change: split the effect into sprite-bound
+items (which join the row sort) and additive glow (which stays drawn
+last on top). `Effect` grew a `getSpriteItems(now, prev, sprites)`
+method returning `RenderItem[]`; the playfield pushes those into the
+same list it sorts before drawing. Gravity moved its falling sprites
+into items and its `draw` is now a no-op. Merge moved the shining
+originals (during the shine phase) and the post-pop new tier sprite
+into items, keeping halos, bubbles, and the orb/pop swell in `draw`
+since they're additive `lighter` composites that read as light, not
+occluding shapes.
+
+Two visual deltas fall out of this. The shine halo now draws *over*
+the original sprite via `lighter` rather than behind it — the sprite
+reads as lit up rather than just having a halo around it, which
+arguably reinforces the "filling with energy" feel better than
+before. And the 1 → 1.06 shine pulse is gone, since `RenderItem`
+doesn't carry a scale; the pulse was subtle to begin with and the
+halo carries the energy. If the pulse turns out to be missed, the
+add-back is an optional `scale` field on `RenderItem`.
+
 ## 2026-05-03 — Animated cascade reactions and gravity
 
 Cascades had been resolving instantly: merge and gravity steps both

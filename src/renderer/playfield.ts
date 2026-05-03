@@ -23,7 +23,12 @@ import {
   drawSpriteAtCell,
   type SpriteAsset,
 } from '../assets/sprite-renderer';
-import { cellKey, createEffect, type Effect } from './effects';
+import {
+  cellKey,
+  createEffect,
+  type Effect,
+  type RenderItem,
+} from './effects';
 
 const BOARD_WIDTH = 7;
 const VISIBLE_ROWS = 12;
@@ -41,12 +46,6 @@ const SPAWN_ENTRY_OFFSET_CELLS = 3;
 const SPAWN_PHASE_OUT_END_T = SPAWN_PHASE_OUT_MS / SPAWN_DURATION_MS;
 const SPAWN_PHASE_DOWN_END_T =
   (SPAWN_PHASE_OUT_MS + SPAWN_PHASE_DOWN_MS) / SPAWN_DURATION_MS;
-
-type RenderHalf = {
-  readonly sprite: SpriteAsset;
-  readonly col: number;
-  readonly row: number;
-};
 
 export type Renderer = {
   draw(now: number): void;
@@ -86,13 +85,20 @@ export function createRenderer(deps: RendererDeps): Renderer {
       }
       ctx.clearRect(0, 0, cssWidth, cssHeight);
       drawLoseThreshold(ctx, cellSize, cssWidth, cssHeight);
-      // Collect board cells and active halves into one list and sort
-      // by row descending so lower rows render on top, per
-      // 04-visual-style.md ("Element sprites"). Drawing the active
-      // pile separately put a falling pair in front of board cells
-      // below it on the way down, then snapped behind them on commit.
+      // Collect board cells, active halves, and effect-owned sprites
+      // (falling cells, shining originals, post-pop new tier) into
+      // one list and sort by row descending so lower rows render on
+      // top, per 04-visual-style.md ("Element sprites"). Sprite art
+      // extrudes outside cell bounds (potion necks, apple stems), so
+      // mid-fall and post-pop sprites need to participate in this
+      // sort or they cover extrusions of the cells below them.
       const items = collectBoardItems(state.board, sprites, effect?.skipCells);
       items.push(...activeHalves(state, inflight, sprites));
+      if (effect !== null && inflight !== null) {
+        items.push(
+          ...effect.getSpriteItems(now, inflight.prevSnapshot, sprites),
+        );
+      }
       items.sort((a, b) => b.row - a.row);
       for (const item of items) {
         drawAt(ctx, item.sprite, item.col, item.row, cellSize, cssHeight);
@@ -150,8 +156,8 @@ function collectBoardItems(
   board: Board,
   sprites: SpriteAtlas,
   skipCells: ReadonlySet<string> | undefined,
-): RenderHalf[] {
-  const items: RenderHalf[] = [];
+): RenderItem[] {
+  const items: RenderItem[] = [];
   for (let r = 0; r < board.length; r++) {
     for (let c = 0; c < board[r].length; c++) {
       const cell = board[r][c];
@@ -194,7 +200,7 @@ function activeHalves(
   state: State,
   inflight: InFlight | null,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   if (inflight !== null && inflight.step.event.kind === 'spawn') {
     const next = inflight.step.snapshot.active;
     if (next === null) return [];
@@ -208,7 +214,7 @@ function spawnSlideHalves(
   next: ActivePiece,
   t: number,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   // Phase 1: prev preview is sliding out of the recess; nothing on the
   // playfield yet so the eye sees one piece at a time.
   if (t < SPAWN_PHASE_OUT_END_T) return [];
@@ -228,7 +234,7 @@ function activeHalvesAtMoment(
   committedActive: ActivePiece,
   inflight: InFlight | null,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   if (inflight === null) return staticHalves(committedActive, sprites);
   const prev = inflight.prevSnapshot.active;
   if (prev === null) return staticHalves(committedActive, sprites);
@@ -257,7 +263,7 @@ function activeHalvesAtMoment(
   }
 }
 
-function staticHalves(active: ActivePiece, sprites: SpriteAtlas): RenderHalf[] {
+function staticHalves(active: ActivePiece, sprites: SpriteAtlas): RenderItem[] {
   switch (active.kind) {
     case 'pair':
       if (active.orientation === 'horizontal') {
@@ -305,7 +311,7 @@ function shiftHalves(
   next: ActivePiece,
   easedT: number,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   const fromHalves = staticHalves(prev, sprites);
   const toHalves = staticHalves(next, sprites);
   return fromHalves.map((from, i) => ({
@@ -326,7 +332,7 @@ function rotateHalves(
   next: ActivePiece,
   easedT: number,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   if (prev.kind !== 'pair' || next.kind !== 'pair') {
     return staticHalves(prev, sprites);
   }
@@ -369,7 +375,7 @@ function landHalves(
   step: Step,
   t: number,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   if (prev.kind !== 'pair' || step.event.kind !== 'pair-land') {
     return staticHalves(prev, sprites);
   }
@@ -401,7 +407,7 @@ function soloLandHalves(
   landingRow: number,
   t: number,
   sprites: SpriteAtlas,
-): RenderHalf[] {
+): RenderItem[] {
   if (prev.kind === 'pair') return staticHalves(prev, sprites);
   const fromHalves = staticHalves(prev, sprites);
   const eased = easeIn(t);
