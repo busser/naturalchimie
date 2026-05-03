@@ -90,47 +90,33 @@ describe('computePool', () => {
 });
 
 describe('samplePiece / pair generation', () => {
-  it('never produces a detonator on an empty board', () => {
-    // The detonator threshold still gates that branch, so an empty
-    // board can only produce pairs or dynamite. Dynamite has no
-    // threshold, so it is reachable here.
-    for (let seed = 0; seed < 50; seed++) {
+  it('produces a pair on an empty board, regardless of seed', () => {
+    // Below the special-item threshold the kind roll is skipped, so
+    // every seed must produce a pair.
+    for (let seed = 0; seed < 20; seed++) {
       const [piece] = samplePiece(EMPTY_BOARD, createRng(seed));
-      expect(piece.kind).not.toBe('detonator');
+      expect(piece.kind).toBe('pair');
     }
   });
 
-  it('only produces tier-1 or tier-2 elements when a pair is sampled on an empty board', () => {
-    // Dynamite can interrupt the pair stream at any time, so skip
-    // non-pair draws and check the pool composition on the rest.
+  it('only produces tier-1 or tier-2 elements on an empty board', () => {
     let rng: Rng = createRng(7);
     for (let i = 0; i < 100; i++) {
       const [piece, next] = samplePiece(EMPTY_BOARD, rng);
       rng = next;
-      if (piece.kind !== 'pair') continue;
-      expect([1, 2]).toContain(piece.first);
-      expect([1, 2]).toContain(piece.second);
+      expect(piece.kind).toBe('pair');
+      const pair = piece as Extract<Piece, { kind: 'pair' }>;
+      expect([1, 2]).toContain(pair.first);
+      expect([1, 2]).toContain(pair.second);
     }
   });
 
-  it('advances the RNG by three draws when producing a pair', () => {
-    // The kind roll now fires on every draw (so dynamite is eligible
-    // from the start), so a pair burns three RNG steps: one kind
-    // roll plus two tier samples. Find a pair-producing seed first
-    // since dynamite would short-circuit at one step.
-    let rng: Rng = createRng(0);
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const [piece, after] = samplePiece(EMPTY_BOARD, rng);
-      if (piece.kind === 'pair') {
-        const [, afterOne] = nextFloat(rng);
-        const [, afterTwo] = nextFloat(afterOne);
-        const [, afterThree] = nextFloat(afterTwo);
-        expect(after).toEqual(afterThree);
-        return;
-      }
-      rng = after;
-    }
-    throw new Error('expected to draw a pair within 50 attempts');
+  it('advances the RNG by exactly two draws when producing a pair', () => {
+    const rng = createRng(123);
+    const [, afterPair] = samplePiece(EMPTY_BOARD, rng);
+    const [, afterOne] = nextFloat(rng);
+    const [, afterTwo] = nextFloat(afterOne);
+    expect(afterPair).toEqual(afterTwo);
   });
 
   it('is deterministic for a given seed', () => {
@@ -163,11 +149,9 @@ describe('samplePiece / pair generation', () => {
     for (let i = 0; i < 5000; i++) {
       const [piece, next] = samplePiece(board, rng);
       rng = next;
-      // Dynamite is eligible here too (no threshold) so skip
-      // non-pair draws — they don't carry tiers to count.
-      if (piece.kind !== 'pair') continue;
-      counts.set(piece.first, (counts.get(piece.first) ?? 0) + 1);
-      counts.set(piece.second, (counts.get(piece.second) ?? 0) + 1);
+      const pair = piece as Extract<Piece, { kind: 'pair' }>;
+      counts.set(pair.first, (counts.get(pair.first) ?? 0) + 1);
+      counts.set(pair.second, (counts.get(pair.second) ?? 0) + 1);
     }
     const tier1 = counts.get(1) ?? 0;
     const tier5 = counts.get(5) ?? 0;
@@ -200,14 +184,14 @@ describe('samplePiece / pair generation', () => {
 });
 
 describe('samplePiece / special items', () => {
-  it('does not produce a detonator below the 20-cell threshold', () => {
-    // The threshold gates only the detonator branch. Dynamite is
-    // always eligible, so we expect a mix of pairs and dynamite at
-    // 19 occupied cells but never a detonator.
+  it('does not roll for a special item below the 20-cell threshold', () => {
+    // 19 occupied cells: even if we set a contrived seed where the
+    // first roll would land in the dynamite band, the threshold means
+    // we never roll, and the result is always a pair.
     const board = boardWithOccupiedCount(19);
-    for (let seed = 0; seed < 100; seed++) {
+    for (let seed = 0; seed < 50; seed++) {
       const [piece] = samplePiece(board, createRng(seed));
-      expect(piece.kind).not.toBe('detonator');
+      expect(piece.kind).toBe('pair');
     }
   });
 
@@ -239,14 +223,14 @@ describe('samplePiece / special items', () => {
       else if (piece.kind === 'detonator') detonator++;
       else pair++;
     }
-    // Tuning values: dynamite 0.10, detonator 0.03, pair 0.87. Wide
+    // Spec values: dynamite 0.03, detonator 0.03, pair 0.94. Wide
     // tolerance so the test isn't seed-fragile, but tight enough to
     // catch a swapped or dropped branch.
-    expect(dynamite / trials).toBeGreaterThan(0.09);
-    expect(dynamite / trials).toBeLessThan(0.11);
+    expect(dynamite / trials).toBeGreaterThan(0.02);
+    expect(dynamite / trials).toBeLessThan(0.04);
     expect(detonator / trials).toBeGreaterThan(0.02);
     expect(detonator / trials).toBeLessThan(0.04);
-    expect(pair / trials).toBeGreaterThan(0.85);
+    expect(pair / trials).toBeGreaterThan(0.92);
   });
 
   it('advances the RNG by one draw when producing a special item', () => {

@@ -3,6 +3,38 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Lit a continuous fuse on the dynamite stick
+
+Replacement for the deleted 80 ms fuse-on-landing wind-up. The
+stick now emits sparks and pale-grey smoke wisps from its fuse tip
+from the moment it first appears (spawn-slide phase 2, when it
+descends from above the canvas) until the explosion sequence
+begins. A small orange glow pinned to the tip sells the "lit fuse"
+without a separate sprite. Particles live in screen-space and stay
+where they were born, so the trail falls out naturally on shift
+and drop — no inherit-velocity logic needed. Emission gates on the
+active piece's kind, so it cuts cleanly when the dynamite-blast
+step clears `state.active` and the fireball's own particle system
+takes over.
+
+To pin the emitter to the same point the sprite pipeline draws,
+split the entangled position-and-sprite logic in `playfield.ts`'s
+halves family into a sprite-free position helper
+(`activeRenderHalves`) plus a thin sprite-mapping wrapper inside
+`draw()`. The fuse subsystem reads `positions[0]` when the active
+piece kind is dynamite. Pure refactor under the hood — identical
+control flow, easing, and tween semantics — but the fuse now has
+a single source of truth for "where is the dynamite this frame"
+instead of duplicating the interpolation logic.
+
+Tuning: 32 sparks/s + 7 smoke wisps/s, sparse enough to read as
+ambient idle decoration. The glow had to shrink once it was on
+screen at sprite scale (core 2.6→1.8 px, halo 7.5→5 px). Also
+reverted the dynamite spawn probability from a playtesting bump
+back to the spec's 0.03 and restored the 20-cell threshold gate so
+dynamite again only rolls on a sufficiently full board, per
+`03-spawning.md`.
+
 ## 2026-05-03 — Stopped the game-over screen from flashing on saved drops
 
 A piece dropped into the overflow zone whose cascade then cleared
