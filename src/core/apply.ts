@@ -106,7 +106,7 @@ function drop(
   active: ActivePiece,
   rng: Rng,
 ): [State, Step[], Rng] {
-  const { board: postLandBoard, landStep } = landActive(state, active);
+  const { board: postLandBoard, landSteps } = landActive(state, active);
   const { board: stableBoard, steps: cascadeSteps } = runCascade(
     postLandBoard,
     state,
@@ -121,15 +121,10 @@ function drop(
   // recomputed"); every emitted snapshot holds the prior score.
   if (isLost(stableBoard)) {
     const stableState: State = { ...state, board: stableBoard, active: null };
-    const landSnapshot: State = {
-      ...state,
-      board: postLandBoard,
-      active: null,
-    };
     return [
       stableState,
       [
-        { ...landStep, snapshot: landSnapshot },
+        ...landSteps,
         ...cascadeSteps,
         { event: { kind: 'game-over' }, snapshot: stableState },
       ],
@@ -138,17 +133,13 @@ function drop(
   }
 
   // Stable-board score: every step before the board settles carries
-  // the prior score; the snapshot that lands on the stable board is
-  // the first to show the new score. That step is the last cascade
-  // step when the cascade ran, otherwise the pair-land step itself.
+  // the prior score; the last step in the chain is the first to land
+  // on a stable board, so its snapshot gets the recomputed score.
+  // That step is the last cascade step when the cascade ran,
+  // otherwise the last land step (the dynamite-blast for dynamite,
+  // the lone land step for pairs and detonators).
   const newScore = computeScore(stableBoard);
-  const stepsBeforeSpawn = stitchScore(
-    landStep,
-    cascadeSteps,
-    state,
-    postLandBoard,
-    newScore,
-  );
+  const stepsBeforeSpawn = stitchScore(landSteps, cascadeSteps, newScore);
 
   // Preview slides to active and a fresh piece is drawn for the
   // preview, against the post-cascade board (03-spawning.md
@@ -164,38 +155,19 @@ function drop(
   return [afterSpawn, [...stepsBeforeSpawn, spawnStep], nextRng];
 }
 
-// Place the new score on the first stable-board snapshot in the
-// drop's step chain. With no cascade, that snapshot is pair-land's;
-// otherwise it's the last cascade step (gravity if it ran, merge if
-// the gravity tick was a no-op and got skipped).
 function stitchScore(
-  landStep: Omit<Step, 'snapshot'>,
+  landSteps: readonly Step[],
   cascadeSteps: readonly Step[],
-  priorState: State,
-  postLandBoard: Board,
   newScore: number,
 ): Step[] {
-  if (cascadeSteps.length === 0) {
-    const landSnapshot: State = {
-      ...priorState,
-      board: postLandBoard,
-      active: null,
-      score: newScore,
-    };
-    return [{ ...landStep, snapshot: landSnapshot }];
-  }
-  const landSnapshot: State = {
-    ...priorState,
-    board: postLandBoard,
-    active: null,
-  };
-  const lastIndex = cascadeSteps.length - 1;
-  const cascadeWithScore = cascadeSteps.map((step, index) =>
+  const all = [...landSteps, ...cascadeSteps];
+  if (all.length === 0) return [];
+  const lastIndex = all.length - 1;
+  return all.map((step, index) =>
     index === lastIndex
       ? { ...step, snapshot: { ...step.snapshot, score: newScore } }
       : step,
   );
-  return [{ ...landStep, snapshot: landSnapshot }, ...cascadeWithScore];
 }
 
 function isLost(board: Board): boolean {
@@ -207,20 +179,24 @@ function isLost(board: Board): boolean {
   return false;
 }
 
-type LandStepDraft = { board: Board; landStep: Omit<Step, 'snapshot'> };
+type LandResult = { board: Board; landSteps: Step[] };
 
-function landActive(state: State, active: ActivePiece): LandStepDraft {
+function landActive(state: State, active: ActivePiece): LandResult {
   switch (active.kind) {
     case 'pair': {
       const { board, firstLandingRow, secondLandingRow } = landPair(
         state.board,
         active,
       );
+      const snapshot: State = { ...state, board, active: null };
       return {
         board,
-        landStep: {
-          event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
-        },
+        landSteps: [
+          {
+            event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
+            snapshot,
+          },
+        ],
       };
     }
     case 'detonator': {
@@ -231,20 +207,67 @@ function landActive(state: State, active: ActivePiece): LandStepDraft {
       const { board, landingRow } = landSolo(state.board, active.column, {
         kind: 'detonator',
       });
-      return { board, landStep: { event: { kind: 'solo-land', landingRow } } };
+      const snapshot: State = { ...state, board, active: null };
+      return {
+        board,
+        landSteps: [
+          { event: { kind: 'solo-land', landingRow }, snapshot },
+        ],
+      };
     }
     case 'dynamite': {
-      // TODO(busser): dynamite should detonate on impact and clear a
-      // path of cells; that lives behind the cascade simulator. Until
-      // then it lands and vanishes — the visual fall plays, no board
-      // cells change.
+      // The dynamite is never a Cell — it falls, lights its fuse, and
+      // is consumed by its own blast. Two steps cover the journey: a
+      // solo-land tween onto an unchanged board (the dynamite is a
+      // visual placeholder at landingRow during the fuse phase, owned
+      // by the dynamite-blast effect's prevSnapshot), then the
+      // dynamite-blast that clears the column from row 0 up to and
+      // including landingRow. TODO(busser): when detonator triggering
+      // lands, intercept the case where the dynamite would settle
+      // directly above a detonator — the detonator triggers first and
+      // destroys the dynamite before its fuse can light.
       const landingRow = lowestEmptyRow(state.board, active.column);
+      const soloSnapshot: State = { ...state, active: null };
+      const blastBoard = clearColumnSegment(
+        state.board,
+        active.column,
+        0,
+        landingRow,
+      );
+      const blastSnapshot: State = {
+        ...state,
+        board: blastBoard,
+        active: null,
+      };
       return {
-        board: state.board,
-        landStep: { event: { kind: 'solo-land', landingRow } },
+        board: blastBoard,
+        landSteps: [
+          { event: { kind: 'solo-land', landingRow }, snapshot: soloSnapshot },
+          {
+            event: {
+              kind: 'dynamite-blast',
+              column: active.column,
+              landingRow,
+            },
+            snapshot: blastSnapshot,
+          },
+        ],
       };
     }
   }
+}
+
+function clearColumnSegment(
+  board: Board,
+  column: number,
+  fromRow: number,
+  toRow: number,
+): Board {
+  const next: Cell[][] = board.map((row) => [...row]);
+  for (let r = fromRow; r <= toRow; r++) {
+    next[r][column] = { kind: 'empty' };
+  }
+  return next;
 }
 
 function landSolo(

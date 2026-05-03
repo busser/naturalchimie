@@ -13,7 +13,7 @@ import {
 
 // Special items only roll when the playfield is sufficiently full.
 const SPECIAL_ITEM_THRESHOLD = 20;
-const DYNAMITE_PROBABILITY = 0.03;
+const DYNAMITE_PROBABILITY = 0.1;
 const DETONATOR_PROBABILITY = 0.03;
 
 const PLAYFIELD_HEIGHT = 7;
@@ -51,21 +51,23 @@ export function pieceToActive(piece: Piece): ActivePiece {
 }
 
 export function samplePiece(board: Board, rng: Rng): [Piece, Rng] {
-  // The kind roll only happens when the threshold is met; otherwise
-  // we go straight to a pair draw without burning an RNG step. This
-  // matches the pseudocode in 03-spawning.md and keeps the seeded
-  // sequence stable across cells filling above the threshold.
-  if (countOccupied(board) >= SPECIAL_ITEM_THRESHOLD) {
-    const [roll, afterRoll] = nextFloat(rng);
-    if (roll < DYNAMITE_PROBABILITY) {
-      return [{ kind: 'dynamite' }, afterRoll];
-    }
-    if (roll < DYNAMITE_PROBABILITY + DETONATOR_PROBABILITY) {
-      return [{ kind: 'detonator' }, afterRoll];
-    }
-    return samplePair(board, afterRoll);
+  // Dynamite is eligible from the start so the player encounters it
+  // without having to fill the board first; detonator still gates on
+  // the SPECIAL_ITEM_THRESHOLD per 03-spawning.md. The kind roll
+  // therefore fires on every draw — even an empty board burns one
+  // RNG step before falling through to a pair.
+  const detonatorEligible = countOccupied(board) >= SPECIAL_ITEM_THRESHOLD;
+  const [roll, afterRoll] = nextFloat(rng);
+  if (roll < DYNAMITE_PROBABILITY) {
+    return [{ kind: 'dynamite' }, afterRoll];
   }
-  return samplePair(board, rng);
+  if (
+    detonatorEligible &&
+    roll < DYNAMITE_PROBABILITY + DETONATOR_PROBABILITY
+  ) {
+    return [{ kind: 'detonator' }, afterRoll];
+  }
+  return samplePair(board, afterRoll);
 }
 
 function samplePair(board: Board, rng: Rng): [Piece, Rng] {

@@ -409,10 +409,12 @@ describe('applyInput / drop', () => {
     expect(steps[0].event).toEqual({ kind: 'solo-land', landingRow: 2 });
   });
 
-  it('lands a dynamite without placing anything on the board', () => {
-    // Dynamite's blast belongs to the cascade simulator. Until that
-    // lands the piece falls and vanishes — no board cell, but the
-    // landing row still flows through so the visual fall plays.
+  it('clears the column the dynamite lands on, including the cell it rested in', () => {
+    // The dynamite is never a board cell: it falls, lights its fuse,
+    // and consumes itself in its own blast. Two steps cover the
+    // journey — solo-land at the dynamite's resting row, then
+    // dynamite-blast that empties the column from the floor up to
+    // (and including) that row.
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -424,9 +426,94 @@ describe('applyInput / drop', () => {
     `);
     const state = makeState({ kind: 'dynamite', column: 3 }, board);
     const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.board[0][3]).toEqual({ kind: 'empty' });
     expect(next.board[1][3]).toEqual({ kind: 'empty' });
-    expect(next.board[0][3]).toEqual({ kind: 'element', tier: 5 });
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'solo-land',
+      'dynamite-blast',
+      'spawn',
+    ]);
     expect(steps[0].event).toEqual({ kind: 'solo-land', landingRow: 1 });
+    expect(steps[1].event).toEqual({
+      kind: 'dynamite-blast',
+      column: 3,
+      landingRow: 1,
+    });
+  });
+
+  it('matches acceptance test 3.1 — dynamite empties a stacked column', () => {
+    // Column 3 (spec col 3) holds tiers 2/3/4/5 at rows 0–3. Dropping
+    // a dynamite at column 3 lands it at row 4 and the blast wipes
+    // rows 0–4 clean. Other columns are untouched.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . 5 . . . .
+      . . 4 . . . .
+      . . 3 . . . .
+      . . 2 . . . .
+    `);
+    const state = makeState({ kind: 'dynamite', column: 2 }, board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    for (let r = 0; r < 7; r++) {
+      expect(next.board[r][2]).toEqual({ kind: 'empty' });
+    }
+    // Score is recomputed on the post-cascade stable board: every
+    // tier in column 3 is gone, so the new score is 0.
+    expect(next.score).toBe(0);
+  });
+
+  it('reports the solo-land snapshot on an unchanged board, then a post-blast snapshot', () => {
+    // The solo-land step's snapshot still has the original column
+    // contents — the dynamite is rendered as a falling-piece visual
+    // by the renderer, not as a board cell. Only the dynamite-blast
+    // step's snapshot has the column cleared.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 7 . . .
+      . . . 5 . . .
+    `);
+    const state = makeState({ kind: 'dynamite', column: 3 }, board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    const [solo, blast] = steps;
+    expect(solo.event).toEqual({ kind: 'solo-land', landingRow: 2 });
+    expect(solo.snapshot.board[0][3]).toEqual({ kind: 'element', tier: 5 });
+    expect(solo.snapshot.board[1][3]).toEqual({ kind: 'element', tier: 7 });
+    expect(blast.event).toEqual({
+      kind: 'dynamite-blast',
+      column: 3,
+      landingRow: 2,
+    });
+    expect(blast.snapshot.board[0][3]).toEqual({ kind: 'empty' });
+    expect(blast.snapshot.board[1][3]).toEqual({ kind: 'empty' });
+    expect(blast.snapshot.board[2][3]).toEqual({ kind: 'empty' });
+  });
+
+  it('matches acceptance test 4.5 — destroying the highest tier shrinks the spawn pool', () => {
+    // Column 3 holds tiers 1/2/3/4/5 (lone tier-5 sets the pool to
+    // {1..5}). Dropping a dynamite at column 3 destroys all of them,
+    // including the tier-5. The post-blast board has no tier-5
+    // anywhere, so the next preview is drawn against pool {1..2}.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . 5 . . .
+      . . . 4 . . .
+      . . . 3 . . .
+      . . . 2 . . .
+      . . . 1 . . .
+    `);
+    const state = makeState({ kind: 'dynamite', column: 3 }, board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.preview.kind).toBe('pair');
+    const newPreview = next.preview as Extract<Piece, { kind: 'pair' }>;
+    expect([1, 2]).toContain(newPreview.first);
+    expect([1, 2]).toContain(newPreview.second);
   });
 
   it('promotes the preview after dropping a solo item', () => {

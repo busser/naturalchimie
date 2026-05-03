@@ -3,6 +3,60 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-03 — Made dynamite blow up the column
+
+Wired dynamite end-to-end. In core, `apply.ts` now emits two land
+steps when dynamite settles: a `solo-land` for the fall onto an
+unchanged board (the dynamite is never a `Cell`, just a visual
+placeholder owned by the blast effect's `prevSnapshot` during the
+fuse phase), then a `dynamite-blast` that clears the column from row
+0 up to and including landingRow. The blast event grew `column` and
+`landingRow` so the renderer doesn't have to diff snapshots to learn
+where the fire goes. Spawn's special-item gate split: dynamite is
+now eligible from the start (the player should encounter it without
+filling the board first), detonator still waits on the 20-cell
+threshold.
+
+The visible explosion took several rounds of iteration. The first
+pass walked a cell-sized flame down at 60 ms/cell, burst a small
+ember spray on each cell-entry, and fired a sideways floor splash at
+the bottom — clean enough, but it read as "elements blowing up one
+by one" rather than as a single moving thing. The pivot was a
+teardrop fireball — leading core, body, trailing wake — sliding
+continuously on a fractional `currentY`, with embers and smoke wisps
+shedding off random points along the descent rather than at cell
+boundaries. The flame silhouette is three radial blobs whose radii
+wobble at mismatched frequencies (9/13/11 Hz) keyed off elapsed time,
+so it flickers without locking to the frame clock.
+
+That gave the body its identity but the start still felt
+disconnected from the dynamite that had just been falling. Connected
+the two by riding the fall's curve into the descent. The spec's drop
+is an ease-in `y = (τ/T_drop)² × D` with `T_drop = 50 ms × D`, so
+v_landing is always 0.04 cell/ms regardless of distance — the same
+parabola the dynamite was on. Continuing past landing gives a closed
+form `descent = 50 × (√(D × SPAWN_ROW) − D)`, which in pure form
+clocks in at ~18 ms/cell — too fast to track. Stretched the whole
+motion by `FIREBALL_TIME_SCALE = 3` so the velocity profile keeps
+its shape (slow start, accelerating end) but plays out over a
+watchable window. Initial velocity is `v_landing / 3` rather than
+v_landing exactly — the unavoidable price of slowing the descent
+past the physical limit, since matching v_landing forces either
+deceleration or a sub-150 ms total descent.
+
+Last polish was on the floor smoke. The first version had puffs
+materialize motionless at floor level and float upward, which felt
+like they appeared from nowhere. Reshaped them into a fall-then-
+splash: each puff is born at a random altitude inside the fireball
+(0.1–2.2 cells above floor), descends at the fireball's terminal
+velocity (computed per-blast from the descent formula so it actually
+matches what the eye just saw), hits the floor, and splashes
+horizontally with a brief upward bounce (`4t(1-t)` shape, peaks at
+midpoint) plus slow buoyancy lifting the residual cloud. The
+fireball itself settled at `BODY_RADIUS = 1.15` cells (diameter 2.3,
+wider than its column) with additive blending so the heat reads as
+lighting up adjacent cells rather than as a containment problem.
+
 ## 2026-05-03 — Tuned the merge animation by feel
 
 Two tweaks after watching the merge play live. First, the bubbles

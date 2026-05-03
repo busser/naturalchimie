@@ -9,10 +9,12 @@ import type { Store } from '../store';
 
 const SHIFT_DURATION_MS = 150;
 const ROTATE_DURATION_MS = 200;
-// Per 05-animations.md: 50 ms per cell of fall distance. Both halves
-// fall at the same rate; the slower half (longer drop) sets the step's
-// total duration.
-const FALL_MS_PER_CELL = 50;
+// Per 05-animations.md: 50 ms per cell of fall distance with ease-in.
+// Both halves of a pair fall at the same rate; the slower half (longer
+// drop) sets the step's total duration. Exported because the dynamite
+// blast extends the drop's motion into the fireball — same curve,
+// same landing velocity, same per-drop acceleration.
+export const FALL_MS_PER_CELL = 50;
 // 05-animations.md gives 200 ms (white bloom) + 150 ms (new element
 // fade-in) as starting values. The renderer's effects.ts uses this
 // budget for shine (~140 ms) + bubble travel (~480 ms peak) + pop
@@ -42,6 +44,44 @@ export const SPAWN_PHASE_DOWN_MS = 200;
 export const SPAWN_PHASE_IN_MS = 200;
 export const SPAWN_DURATION_MS =
   SPAWN_PHASE_OUT_MS + SPAWN_PHASE_DOWN_MS + SPAWN_PHASE_IN_MS;
+// Per 05-animations.md "Dynamite explosion": ~80 ms fuse spark, then
+// a fireball descends to the floor. The fireball's motion is the
+// continuation of the dynamite's drop — same ease-in curve, picking
+// up at the dynamite's landing velocity and accelerating onward. The
+// descent time is derived from that continuation (see
+// dynamiteDescentDurationMs below). After the fireball reaches the
+// floor, the floor-impact tail plays out — embers settle, smoke
+// disperses — adding BLAST_FLOOR_IMPACT_MS to the step.
+export const FUSE_DURATION_MS = 80;
+export const BLAST_FLOOR_IMPACT_MS = 480;
+
+// The fireball's descent uses the dynamite drop's curve, stretched
+// in wall-clock time by this factor. 1.0 = pure physical continuation
+// of the drop, which clocks in at ~18 ms per cell and reads as a
+// blink. Larger values stretch the whole motion (and slow the start
+// proportionally — initial velocity becomes v_landing / scale) so
+// the eye can track the fireball. Tuned by feel; the velocity
+// profile shape is preserved across scales.
+export const FIREBALL_TIME_SCALE = 3;
+
+// Time the fireball spends descending from landingRow to the floor.
+// Derived by treating the dynamite's drop as a partial ease-in over a
+// hypothetical full-column fall (SPAWN_ROW cells in
+// FALL_MS_PER_CELL * SPAWN_ROW ms) and continuing the same parabola
+// past the landing point, then stretched by FIREBALL_TIME_SCALE.
+// Closed form for the unscaled descent:
+//   FALL_MS_PER_CELL * (sqrt(D * SPAWN_ROW) - D)
+// where D = SPAWN_ROW - landingRow is the distance the dynamite fell.
+// At D = 0 (column was full when dynamite spawned) the descent is 0.
+export function dynamiteDescentDurationMs(landingRow: number): number {
+  const distanceFall = SPAWN_ROW - landingRow;
+  if (distanceFall <= 0) return 0;
+  return (
+    FIREBALL_TIME_SCALE *
+    FALL_MS_PER_CELL *
+    (Math.sqrt(distanceFall * SPAWN_ROW) - distanceFall)
+  );
+}
 
 export type InFlight = {
   readonly step: Step;
@@ -130,8 +170,13 @@ function stepDuration(step: Step): number {
       }
       return GRAVITY_MS_PER_CELL * maxDistance + INTER_CASCADE_PAUSE_MS;
     }
-    case 'detonate':
     case 'dynamite-blast':
+      return (
+        FUSE_DURATION_MS +
+        dynamiteDescentDurationMs(step.event.landingRow) +
+        BLAST_FLOOR_IMPACT_MS
+      );
+    case 'detonate':
     case 'game-over':
       // Durations land alongside each step's implementation.
       return 0;

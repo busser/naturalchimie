@@ -27,8 +27,10 @@ describe('store / input buffering across pairs', () => {
     const afterCascade = store.getSnapshot();
     // A spawn step should have committed a fresh active piece, but it
     // should be sitting at the spawn position, untouched — not landed.
+    // Reference identity rather than deep equality: spawn always
+    // builds a new ActivePiece, but the random tier values can repeat.
     expect(afterCascade.active).not.toBeNull();
-    expect(afterCascade.active).not.toEqual(beforeFirstDrop.active);
+    expect(afterCascade.active).not.toBe(beforeFirstDrop.active);
 
     // Confirm the second pair is still in the spawn area: dropping it
     // produces fresh steps. If the buffered drops had leaked through,
@@ -38,7 +40,7 @@ describe('store / input buffering across pairs', () => {
     store.dispatch({ kind: 'drop' });
     drain(store);
     const afterSecondDrop = store.getSnapshot();
-    expect(afterSecondDrop.active).not.toEqual(beforeSecondDrop.active);
+    expect(afterSecondDrop.active).not.toBe(beforeSecondDrop.active);
   });
 
   it('discards non-drop inputs that arrive after a drop', () => {
