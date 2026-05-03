@@ -46,8 +46,8 @@ const SMOKE_RADIUS_GROWTH = 1.4;
 // Tip glow: a small orange dot pinned to the fuse tip while lit. The
 // pulse keeps it from looking dead-static; frequency is intentionally
 // off-integer to avoid frame-locking.
-const GLOW_CORE_RADIUS_PX = 2.6;
-const GLOW_HALO_RADIUS_PX = 7.5;
+const GLOW_CORE_RADIUS_PX = 1.8;
+const GLOW_HALO_RADIUS_PX = 5;
 const GLOW_PULSE_FREQ_HZ = 4.7;
 const GLOW_PULSE_AMPLITUDE = 0.18;
 
