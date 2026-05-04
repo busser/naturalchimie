@@ -63,6 +63,21 @@ export const BLAST_FLOOR_IMPACT_MS = 480;
 // profile shape is preserved across scales.
 export const FIREBALL_TIME_SCALE = 3;
 
+// Per 05-animations.md "Detonator detonation". The plunger press
+// runs first, then the layered detonation effects (initial flash,
+// shockwave ring, fireball bloom + dispersion, per-cell debris,
+// continuous fireball embers, smoke wisps) share the remaining
+// window. SHOCKWAVE_MS_PER_CELL is the rate at which the leading
+// concussion ring expands outward — fast enough to precede the
+// fireball, so cleared cells see the ring pass through well before
+// the flame consumes them. Per-cell engulfment timing is derived
+// inside effects.ts from the fireball's actual bloom curve, so
+// each cell's sprite vanishes exactly as the visible flame edge
+// sweeps past it.
+export const DETONATOR_PRESS_MS = 100;
+export const DETONATOR_EFFECTS_MS = 900;
+export const DETONATOR_SHOCKWAVE_MS_PER_CELL = 50;
+
 // Time the fireball spends descending from landingRow to the floor.
 // Derived by treating the dynamite's drop as a partial ease-in over a
 // hypothetical full-column fall (SPAWN_ROW cells in
@@ -180,8 +195,9 @@ function stepDuration(step: Step): number {
         BLAST_FLOOR_IMPACT_MS
       );
     case 'detonate':
+      return DETONATOR_PRESS_MS + DETONATOR_EFFECTS_MS;
     case 'game-over':
-      // Durations land alongside each step's implementation.
+      // Duration lands alongside the step's implementation.
       return 0;
   }
 }

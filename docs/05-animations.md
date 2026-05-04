@@ -24,7 +24,7 @@ hand-drawn charm did not depend on flashy effects.
 | Gravity fall (per cell of distance) | 50 ms |
 | Dynamite explosion travel (per cell) | 60 ms |
 | Detonator plunger press | 100 ms |
-| Detonator detonation flash | 200 ms |
+| Detonator detonation effects | 900 ms |
 | Preview slide-out / slide-in | 200 ms each, with ~80 ms gap |
 | Game-over fade | 600 ms |
 
@@ -210,33 +210,101 @@ unchanged, so no reactions fire.
 
 ## Detonator detonation
 
+The detonation is a real explosion: a fireball blooms over the
+3×3 area, sustains long enough for the eye to take it in, then
+dissipates with smoke and falling embers. The shockwave ring is
+the leading concussion front announcing the bloom — it precedes
+the fireball outward at high speed and dissolves before the
+fireball reaches its full size. The shockwave's pale-blue tint
+at its leading edge is the only cool-toned element; the fireball
+itself, embers, and lingering glow all run warm (yellow → orange
+→ red), the same palette as dynamite. The two effects share that
+warm core deliberately — both are explosions — but the
+detonator's shape (radial, stationary, with a 3×3 footprint) and
+its shockwave ring (a thing dynamite doesn't have) keep them
+distinct.
+
 When something is dropped directly onto a detonator:
 
-1. The triggering item (a normal element from a pair, a dynamite,
-   or another detonator) settles into its cell with the normal
+1. The triggering item settles into its cell with the normal
    drop/settle animation.
-2. As soon as it arrives, the detonator's plunger **presses
-   down** into the box over ~100 ms (a small downward tween of
-   the plunger sprite — the box and plunger become a single
-   compressed shape briefly).
-3. A **circular flash** appears centered on the detonator's cell,
-   expanding outward to fill the 3×3 Moore neighborhood over
-   ~150 ms. The flash is bright white at its center, fading to
-   yellow-orange at its edges, with a few spark particles
-   radiating outward.
-4. Every cell in the 3×3 neighborhood (clipped by the playfield
-   bounds) is cleared. The destroyed elements briefly flash white
-   (~16 ms) before disappearing, the same as in the dynamite
-   blast.
-5. The detonator itself disappears with the rest.
-6. Total detonation duration is ~200 ms.
+2. **Plunger press (~100 ms).** The detonator y-squashes into
+   its cell — the whole sprite compresses vertically, pivoting
+   on the cell's floor, with a small upward bounce in the final
+   ~20 ms before bottoming out (cartoony anticipation). Box and
+   plunger move as one shape; we don't try to compress only the
+   plunger.
+3. **Detonation fires** the moment the press completes.
+
+The detonation itself plays out over ~900 ms post-detonation, in
+several overlapping layers:
+
+- **Detonation flash** — a brief, intense white-yellow bloom at
+  the detonator's cell at the moment of detonation. Peaks
+  ~35 ms in, decays by ~130 ms. Punctuates the bang before the
+  fireball takes over the visual.
+- **Shockwave ring** — a thin bright ring expanding from the
+  detonator's cell at constant speed (~50 ms per cell of
+  travel). Hard leading edge, soft trailing dissipation. White-
+  yellow core with a pale-blue tint at the leading edge, the
+  one cool note in the whole composition. Reaches the centers
+  of the 4 orthogonal neighbors at ~50 ms post-detonation, and
+  the 4 diagonal corners at ~70 ms. Fully dissolved by ~150 ms.
+- **Fireball bloom** — a radial multi-layered fireball (white-
+  yellow inner core, yellow-orange body, red-orange outer wake,
+  with mismatched-frequency sine wobbles for flame flicker)
+  grows from a point at the detonator's cell out to ~2 cells
+  radius. The outer wake exceeds the 3×3 area's corner distance
+  (~1.41 cells) so the fireball visibly spills into the cells
+  beyond the destruction zone — making the explosion read as
+  bigger than its 3×3 footprint. Bloom phase ~180 ms (ease-out:
+  fast initial growth, decelerating).
+- **Fireball dispersion** — alpha decays quadratically over
+  ~400 ms while the radius keeps growing outward by ~20%
+  (ease-out). No sustain phase: real explosions don't hold at
+  peak, they expand and immediately disperse. The fireball is
+  fully gone by ~580 ms post-detonation. Letting the radius
+  keep growing during the fade is what sells "the explosion is
+  thinning into the air" rather than "a glow is pulsing in
+  place".
+- **Per-cell engulfment + debris burst** — each cleared cell's
+  element sprite stays rendered until the fireball's outer edge
+  sweeps past the cell's center, then vanishes. Engulfment is
+  tied to the actual bloom curve (not a separate per-cell rate),
+  so the sprite's disappearance lines up exactly with the
+  visible flame arrival: edge cells engulfed at ~50 ms post-
+  detonation, corners at ~80 ms. At engulfment, the cell also
+  emits a small radial burst of debris embers (~6 per cell)
+  from its own center, in evenly-spread directions with random
+  gravity sag and ~400 ms lifetime. Per-cell origins (rather
+  than all from the detonator's center) sell "this thing got
+  blown up" rather than "everything got pulled toward the
+  middle".
+- **Continuous fireball embers** — additional embers shed
+  continuously from random points within the fireball's body
+  during the bloom + sustain phases. Outward velocities with
+  gravity sag, ~400 ms lifetime, same yellow/orange/red palette
+  as dynamite. Adds the visual texture of an explosion in
+  progress.
+- **Smoke wisps** — lifted from random points within the
+  explosion area throughout the fireball's life. Drift upward,
+  expand, fade. Drawn with the default blend (not additive) so
+  they darken against the sky behind the playfield like real
+  smoke. Last wisps die ~900 ms post-detonation.
+
+The detonator itself is engulfed at distance 0 (immediately at
+detonation). It is destroyed alongside everything else in the
+3×3 area.
+
+Total duration: ~1000 ms (100 ms plunger press + 900 ms
+detonation effects).
 
 The trigger-then-flash sequence has special cases:
 
 - **Dynamite triggers a detonator.** The dynamite settles, the
   detonator triggers, the 3×3 blast destroys the dynamite before
   its fuse animation begins. The dynamite never explodes; only
-  the detonator's circular blast occurs.
+  the detonator's blast occurs.
 - **Detonator triggers another detonator (drop case).** The new
   detonator settles, the existing detonator triggers, the 3×3
   blast destroys the new detonator before it has a chance to
@@ -244,9 +312,13 @@ The trigger-then-flash sequence has special cases:
 - **Pair lands on two detonators simultaneously.** If a
   horizontal pair is dropped such that each half lands on a
   different detonator, both detonators trigger at the same time.
-  Their plunger presses and circular flashes animate in parallel
-  on the same timing. Cleared cells are the union of the two
-  3×3 areas.
+  Every layer (presses, flashes, shockwave rings, fireballs,
+  embers, smoke) animates in parallel on the same timing, with
+  each detonator owning its own copy. Cleared cells are the
+  union of the two 3×3 areas; cells in the intersection are
+  engulfed by whichever fireball reaches them first. Where the
+  fireballs overlap, additive blending makes the overlapping
+  region brighter, which reads as right.
 - **A detonator destroyed by another detonator's blast** does
   not itself trigger — it is simply destroyed, treated as any
   other cleared element. There is no chain explosion via

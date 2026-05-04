@@ -16,16 +16,19 @@
 
 import {
   BLAST_FLOOR_IMPACT_MS,
+  DETONATOR_PRESS_MS,
+  DETONATOR_SHOCKWAVE_MS_PER_CELL,
   FALL_MS_PER_CELL,
   FIREBALL_TIME_SCALE,
   GRAVITY_MS_PER_CELL,
   dynamiteDescentDurationMs,
 } from '../animation/driver';
 import type { SpriteAtlas } from '../assets/sprite-loader';
-import type { SpriteAsset } from '../assets/sprite-renderer';
+import { drawSpriteAtCell, type SpriteAsset } from '../assets/sprite-renderer';
 import {
   SPAWN_ROW,
   type Movement,
+  type Pos,
   type ReactingGroup,
   type State,
   type Step,
@@ -162,6 +165,12 @@ export function createEffect(step: Step, startNow: number): Effect | null {
       return createDynamiteBlastEffect(
         step.event.column,
         step.event.landingRow,
+        startNow,
+      );
+    case 'detonate':
+      return createDetonateEffect(
+        step.event.detonators,
+        step.event.cleared,
         startNow,
       );
     default:
@@ -1293,6 +1302,715 @@ function drawFloorSmoke(
     ctx.fill();
   }
   ctx.restore();
+}
+
+// Detonator detonation ------------------------------------------
+//
+// Phases per 05-animations.md, with the renderer's enhancements:
+//
+// 0..DETONATOR_PRESS_MS                — plunger press: the
+//                                        detonator sprite y-squashes
+//                                        with a small upward bounce
+//                                        in the final 20% of the
+//                                        window before bottoming out.
+// DETONATOR_PRESS_MS..                 — detonation effects, layered:
+//                                        a brief detonation flash
+//                                        punctuates the moment of
+//                                        detonation; a thin shockwave
+//                                        ring expands outward at high
+//                                        speed (the pre-cursor
+//                                        concussion front); behind it
+//                                        a multi-layered fireball
+//                                        blooms over the 3×3 area,
+//                                        sustains, then fades; each
+//                                        cleared cell renders its
+//                                        original sprite until the
+//                                        fireball reaches it, then
+//                                        bursts into a small radial
+//                                        debris cloud; continuous
+//                                        embers shed from the
+//                                        fireball's body throughout
+//                                        bloom + sustain; smoke wisps
+//                                        lift from the explosion area
+//                                        and linger past the fade.
+//
+// The shockwave's pale-blue tint at its leading edge is the only
+// cool-toned element; the fireball, embers, and aftermath fill all
+// run warm (yellow → orange → red), the same palette as dynamite.
+// The two effects share that warm core deliberately — both are
+// explosions — but the detonator's shape (radial, stationary, with
+// a 3×3 footprint) and the shockwave ring (which dynamite doesn't
+// have) keep them distinct.
+//
+// Per-cell engulfment times are derived from constant-speed fireball
+// expansion: a cell at Euclidean distance d from a detonator is
+// reached at d * DETONATOR_ENGULF_MS_PER_CELL after the press —
+// slower than the shockwave, so the ring visibly leads the flame.
+// Multi-detonator: every detonator runs every layer in parallel
+// from its own cell; cells in overlap zones are engulfed by
+// whichever fireball reaches them first. Particle origins, angles,
+// speeds, and birth times are seeded once at construction with
+// Math.random — the animation is deterministic from elapsed time
+// onward, so frame-rate stutters don't shift particle positions.
+
+const SQUASH_MIN = 0.65;
+const SQUASH_BOUNCE = 0.85;
+// Bounce phase is the final tail of the press window; t < 0.8
+// compresses, then t in [0.8, 1] eases back up before detonation.
+const SQUASH_BOUNCE_START_T = 0.8;
+
+const DETONATION_FLASH_PEAK_MS = 35;
+const DETONATION_FLASH_DURATION_MS = 130;
+const DETONATION_FLASH_RADIUS_CELLS = 0.7;
+
+// Fireball phases. Bloom: radius grows from 0 to full with ease-out
+// (fast initial growth, decelerating). No sustain: real explosions
+// don't hold at peak — they expand, peak, and immediately disperse.
+// Disperse: alpha decays to zero while the radius keeps growing
+// outward, so the fireball reads as a real explosion thinning into
+// the air rather than a glow that pulses in place.
+const FIREBALL_BLOOM_MS = 180;
+const FIREBALL_DISPERSE_MS = 400;
+const FIREBALL_TOTAL_MS = FIREBALL_BLOOM_MS + FIREBALL_DISPERSE_MS;
+// Three concentric layers: the outer wake provides red-orange
+// glow well past the cell perimeter, the body is the bulk
+// yellow-orange flame, and the inner core is a small bright
+// white-yellow hot spot. Outer radius generously exceeds the 3×3
+// area's corner distance (√2 ≈ 1.41 cells) so the fireball
+// visibly spills past the destroyed cells into adjacent space.
+const FIREBALL_OUTER_RADIUS_CELLS = 2.0;
+const FIREBALL_BODY_RADIUS_CELLS = 1.45;
+const FIREBALL_INNER_RADIUS_CELLS = 0.8;
+// Outward expansion during the disperse phase: the fireball keeps
+// growing past full bloom while alpha decays. Fraction of full
+// radius added (so 0.2 means the outer edge ends at 1.2 × full).
+const FIREBALL_DISPERSE_EXPAND = 0.2;
+
+const CELL_WHITE_FLASH_MS = 80;
+const CELL_WHITE_FLASH_RADIUS_CELLS = 0.55;
+
+// Per-cell debris bursts: at the moment the fireball engulfs a
+// cell, this many embers fire from that cell's center, fanned
+// around the circle with jitter. Origin per cell (not per
+// detonator) so the bursts read as "this thing got blown up"
+// rather than radiating from one center.
+const DEBRIS_PER_CELL = 6;
+const DEBRIS_LIFETIME_MS = 400;
+const DEBRIS_SPEED_MIN_CELLS = 0.7;
+const DEBRIS_SPEED_MAX_CELLS = 1.5;
+const DEBRIS_GRAVITY_CELLS = 1.4;
+const DEBRIS_BASE_RADIUS_MIN_PX = 2.0;
+const DEBRIS_BASE_RADIUS_MAX_PX = 3.5;
+
+// Continuous fireball embers: shed throughout the bloom + sustain
+// phases from random points within the fireball's body. Mirrors
+// the dynamite's continuous emission. Births are spread across
+// FIREBALL_EMBER_BIRTH_END_MS so the stream feels alive across the
+// explosion's whole duration.
+const FIREBALL_EMBERS_PER_DET = 24;
+const FIREBALL_EMBER_BIRTH_END_MS = 500;
+const FIREBALL_EMBER_LIFETIME_MS = 400;
+const FIREBALL_EMBER_SPEED_MIN_CELLS = 0.5;
+const FIREBALL_EMBER_SPEED_MAX_CELLS = 1.2;
+const FIREBALL_EMBER_GRAVITY_CELLS = 1.2;
+
+// Smoke wisps lifting from random points within the explosion area.
+// Drawn with the default blend so they darken the playfield like
+// real smoke (additive smoke would lighten the sky behind the
+// playfield, which reads wrong).
+const DET_SMOKE_PER_DET = 10;
+const DET_SMOKE_BIRTH_END_MS = 500;
+const DET_SMOKE_LIFETIME_MS = 400;
+const DET_SMOKE_RADIUS_FACTOR = 0.55;
+const DET_SMOKE_DRIFT_CELLS = 1.2;
+const DET_SMOKE_ORIGIN_RADIUS_CELLS = 1.2;
+
+// The shockwave keeps drawing past the diagonal-corner arrival time
+// (~71 ms) for this trail before fully dissipating. Without a
+// trail the ring would pop out of existence the instant it cleared
+// the corners, which reads as abrupt; the trail lets it dissolve.
+const SHOCKWAVE_TRAIL_MS = 60;
+const SHOCKWAVE_HALF_THICKNESS_CELLS = 0.16;
+
+type DetEmber = {
+  readonly birthMs: number;
+  readonly originColumnCells: number;
+  readonly originRowCells: number;
+  readonly angleRad: number;
+  readonly speedCells: number;
+  readonly baseRadiusPx: number;
+  readonly hue: 'yellow' | 'orange' | 'red';
+  readonly gravityCells: number;
+  readonly lifetimeMs: number;
+};
+
+type DetSmokeWisp = {
+  readonly birthMs: number;
+  readonly originColumnCells: number;
+  readonly originRowCells: number;
+};
+
+function createDetonateEffect(
+  detonators: readonly Pos[],
+  cleared: readonly Pos[],
+  startNow: number,
+): Effect {
+  // The effect owns every cleared cell: each one renders its
+  // original sprite until the fireball reaches it, then disappears.
+  // Detonators are part of `cleared` and are also drawn (squashed)
+  // during the press by draw().
+  const skipCells = new Set<string>();
+  for (const cell of cleared) skipCells.add(cellKey(cell.row, cell.column));
+
+  // Engulfment time per cleared cell — when the fireball's outer
+  // edge sweeps past the cell's center. Tying this to the actual
+  // bloom curve (rather than a separate per-cell-distance constant)
+  // means each cell's sprite vanishes exactly as the visible flame
+  // arrives, with no stale frames where the sprite hangs around
+  // inside the fireball. The bloom curve is r(t) = (1 - (1-t/B)²)·R
+  // for B = FIREBALL_BLOOM_MS and R = FIREBALL_OUTER_RADIUS_CELLS;
+  // inverting gives t = B · (1 - √(1 - d/R)). With multi-detonator
+  // overlap, a cell is engulfed by whichever fireball reaches it
+  // first — i.e. the closest detonator wins.
+  const engulfByKey = new Map<string, number>();
+  for (const cell of cleared) {
+    let earliest = Infinity;
+    for (const det of detonators) {
+      const dx = cell.column - det.column;
+      const dy = cell.row - det.row;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const ratio = Math.min(1, distance / FIREBALL_OUTER_RADIUS_CELLS);
+      const engulfMs =
+        DETONATOR_PRESS_MS + FIREBALL_BLOOM_MS * (1 - Math.sqrt(1 - ratio));
+      if (engulfMs < earliest) earliest = engulfMs;
+    }
+    engulfByKey.set(cellKey(cell.row, cell.column), earliest);
+  }
+
+  const detonatorKeys = new Set<string>();
+  for (const det of detonators) {
+    detonatorKeys.add(cellKey(det.row, det.column));
+  }
+
+  // Per-cell debris bursts. Each cleared cell fires DEBRIS_PER_CELL
+  // embers from its own center at engulfment time, fanned around
+  // the circle with jitter so the burst doesn't grid up.
+  const debrisEmbers: DetEmber[] = [];
+  for (const cell of cleared) {
+    const engulfMs = engulfByKey.get(cellKey(cell.row, cell.column));
+    if (engulfMs === undefined) continue;
+    const baseAngle = Math.random() * Math.PI * 2;
+    for (let i = 0; i < DEBRIS_PER_CELL; i++) {
+      const angle =
+        baseAngle +
+        (i * Math.PI * 2) / DEBRIS_PER_CELL +
+        (Math.random() - 0.5) * 0.4;
+      debrisEmbers.push({
+        birthMs: engulfMs,
+        originColumnCells: cell.column + 0.5,
+        originRowCells: cell.row + 0.5,
+        angleRad: angle,
+        speedCells: lerp(
+          DEBRIS_SPEED_MIN_CELLS,
+          DEBRIS_SPEED_MAX_CELLS,
+          Math.random(),
+        ),
+        baseRadiusPx: lerp(
+          DEBRIS_BASE_RADIUS_MIN_PX,
+          DEBRIS_BASE_RADIUS_MAX_PX,
+          Math.random(),
+        ),
+        hue: pickEmberHue(),
+        gravityCells: DEBRIS_GRAVITY_CELLS,
+        lifetimeMs: DEBRIS_LIFETIME_MS,
+      });
+    }
+  }
+
+  // Continuous fireball embers shed from the fireball's body
+  // throughout bloom + sustain. Origins are uniformly distributed
+  // within the fireball's full radius (sqrt(uniform) for the
+  // radial component avoids clustering at the center). Each ember
+  // travels outward from its birth point with some angle jitter.
+  const fireballEmbers: DetEmber[] = [];
+  for (const det of detonators) {
+    for (let i = 0; i < FIREBALL_EMBERS_PER_DET; i++) {
+      const birthMs =
+        DETONATOR_PRESS_MS + Math.random() * FIREBALL_EMBER_BIRTH_END_MS;
+      const r = Math.sqrt(Math.random()) * FIREBALL_OUTER_RADIUS_CELLS;
+      const theta = Math.random() * Math.PI * 2;
+      fireballEmbers.push({
+        birthMs,
+        originColumnCells: det.column + 0.5 + Math.cos(theta) * r,
+        originRowCells: det.row + 0.5 + Math.sin(theta) * r,
+        // Travel direction is outward (theta) with jitter so embers
+        // fan out rather than firing perfectly radially.
+        angleRad: theta + (Math.random() - 0.5) * 0.7,
+        speedCells: lerp(
+          FIREBALL_EMBER_SPEED_MIN_CELLS,
+          FIREBALL_EMBER_SPEED_MAX_CELLS,
+          Math.random(),
+        ),
+        baseRadiusPx: lerp(
+          EMBER_BASE_RADIUS_MIN_PX,
+          EMBER_BASE_RADIUS_MAX_PX,
+          Math.random(),
+        ),
+        hue: pickEmberHue(),
+        gravityCells: FIREBALL_EMBER_GRAVITY_CELLS,
+        lifetimeMs: FIREBALL_EMBER_LIFETIME_MS,
+      });
+    }
+  }
+
+  // Smoke wisps lifting from random points within the explosion
+  // area, throughout the explosion's life.
+  const smokeWisps: DetSmokeWisp[] = [];
+  for (const det of detonators) {
+    for (let i = 0; i < DET_SMOKE_PER_DET; i++) {
+      const birthMs =
+        DETONATOR_PRESS_MS + Math.random() * DET_SMOKE_BIRTH_END_MS;
+      const r = Math.sqrt(Math.random()) * DET_SMOKE_ORIGIN_RADIUS_CELLS;
+      const theta = Math.random() * Math.PI * 2;
+      smokeWisps.push({
+        birthMs,
+        originColumnCells: det.column + 0.5 + Math.cos(theta) * r,
+        originRowCells: det.row + 0.5 + Math.sin(theta) * r,
+      });
+    }
+  }
+
+  return {
+    skipCells,
+    getSpriteItems(now, prev, sprites) {
+      const elapsedMs = now - startNow;
+      const items: RenderItem[] = [];
+      for (const cell of cleared) {
+        // Detonators are drawn squashed by draw() during the press
+        // and gone after detonation (engulfMs = DETONATOR_PRESS_MS),
+        // so they're never in items.
+        if (detonatorKeys.has(cellKey(cell.row, cell.column))) continue;
+        const engulfMs = engulfByKey.get(cellKey(cell.row, cell.column));
+        if (engulfMs === undefined || elapsedMs >= engulfMs) continue;
+        const c = prev.board[cell.row]?.[cell.column];
+        if (!c || c.kind === 'empty') continue;
+        const sprite =
+          c.kind === 'detonator'
+            ? sprites.detonator
+            : sprites.byTier[c.tier];
+        items.push({ sprite, col: cell.column, row: cell.row });
+      }
+      return items;
+    },
+    draw(ctx, now, _prev, sprites, cellSize, canvasHeight) {
+      const elapsedMs = now - startNow;
+      // Smoke is drawn first (default blend, drawn before any
+      // additive layers) so it sits behind the flame and embers.
+      drawDetSmoke(ctx, smokeWisps, elapsedMs, cellSize, canvasHeight);
+      // Phase 1: plunger press. Detonators y-squash into the cell
+      // floor, with a brief bounce back at the tail of the window.
+      // Drawn via draw() (not getSpriteItems) so the effect can
+      // apply a vertical scale around the cell's anchor row.
+      if (elapsedMs < DETONATOR_PRESS_MS) {
+        const squashY = squashCurve(elapsedMs / DETONATOR_PRESS_MS);
+        for (const det of detonators) {
+          drawSquashedDetonator(
+            ctx,
+            sprites.detonator,
+            det.column,
+            det.row,
+            squashY,
+            cellSize,
+            canvasHeight,
+          );
+        }
+        return;
+      }
+      // Phase 2: detonation. Layers are drawn back-to-front:
+      // per-cell white flashes (sit on the destroyed cells), then
+      // the fireball (warm body of the explosion), the detonation
+      // flash punctuating the bang, embers (debris + continuous),
+      // then the shockwave ring on top as the leading edge.
+      const sinceDetonationMs = elapsedMs - DETONATOR_PRESS_MS;
+      drawCellFlashes(
+        ctx,
+        cleared,
+        engulfByKey,
+        elapsedMs,
+        cellSize,
+        canvasHeight,
+      );
+      drawDetFireball(
+        ctx,
+        detonators,
+        sinceDetonationMs,
+        cellSize,
+        canvasHeight,
+      );
+      drawDetonationFlash(
+        ctx,
+        detonators,
+        sinceDetonationMs,
+        cellSize,
+        canvasHeight,
+      );
+      drawDetEmbers(ctx, debrisEmbers, elapsedMs, cellSize, canvasHeight);
+      drawDetEmbers(
+        ctx,
+        fireballEmbers,
+        elapsedMs,
+        cellSize,
+        canvasHeight,
+      );
+      drawShockwave(
+        ctx,
+        detonators,
+        sinceDetonationMs,
+        cellSize,
+        canvasHeight,
+      );
+    },
+  };
+}
+
+// Squash curve: ease-in to SQUASH_MIN at t = SQUASH_BOUNCE_START_T,
+// then ease back up to SQUASH_BOUNCE at t = 1. The bounce reads as
+// "wind-up before release" — the detonator gathers anticipation
+// just before detonation rather than uniformly compressing into
+// detonation.
+function squashCurve(t: number): number {
+  if (t < SQUASH_BOUNCE_START_T) {
+    const k = t / SQUASH_BOUNCE_START_T;
+    return lerp(1, SQUASH_MIN, k * k);
+  }
+  const k = (t - SQUASH_BOUNCE_START_T) / (1 - SQUASH_BOUNCE_START_T);
+  return lerp(SQUASH_MIN, SQUASH_BOUNCE, k);
+}
+
+function drawSquashedDetonator(
+  ctx: CanvasRenderingContext2D,
+  sprite: SpriteAsset,
+  column: number,
+  row: number,
+  squashY: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  const cellScreenX = column * cellSize;
+  const cellScreenY = canvasHeight - (row + 1) * cellSize;
+  // Pivot on the cell's floor (the sprite's anchor row), so the
+  // squash compresses the plunger into the box rather than
+  // shrinking toward the cell center.
+  const pivotY = cellScreenY + cellSize;
+  ctx.save();
+  ctx.translate(0, pivotY);
+  ctx.scale(1, squashY);
+  ctx.translate(0, -pivotY);
+  drawSpriteAtCell(ctx, sprite, cellScreenX, cellScreenY, cellSize);
+  ctx.restore();
+}
+
+function drawDetonationFlash(
+  ctx: CanvasRenderingContext2D,
+  detonators: readonly Pos[],
+  sinceDetonationMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  if (sinceDetonationMs >= DETONATION_FLASH_DURATION_MS) return;
+  // Linear ramp up to peak, then quadratic decay.
+  let alpha;
+  if (sinceDetonationMs < DETONATION_FLASH_PEAK_MS) {
+    alpha = sinceDetonationMs / DETONATION_FLASH_PEAK_MS;
+  } else {
+    const decayT =
+      (sinceDetonationMs - DETONATION_FLASH_PEAK_MS) /
+      (DETONATION_FLASH_DURATION_MS - DETONATION_FLASH_PEAK_MS);
+    alpha = (1 - decayT) * (1 - decayT);
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const det of detonators) {
+    const cx = (det.column + 0.5) * cellSize;
+    const cy = canvasHeight - (det.row + 0.5) * cellSize;
+    const r = cellSize * DETONATION_FLASH_RADIUS_CELLS;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `rgba(255, 255, 250, ${alpha})`);
+    grad.addColorStop(0.4, `rgba(255, 245, 180, ${alpha * 0.7})`);
+    grad.addColorStop(1, 'rgba(255, 220, 100, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDetFireball(
+  ctx: CanvasRenderingContext2D,
+  detonators: readonly Pos[],
+  sinceDetonationMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  if (sinceDetonationMs < 0 || sinceDetonationMs >= FIREBALL_TOTAL_MS) {
+    return;
+  }
+  // Two phases: bloom (radius grows from 0 to full, alpha 0 to 1)
+  // and disperse (alpha decays to 0 while the radius keeps growing
+  // past full by FIREBALL_DISPERSE_EXPAND with ease-out — the
+  // fireball reads as thinning into the air, not pulsing in place).
+  let scale: number;
+  let alpha: number;
+  if (sinceDetonationMs < FIREBALL_BLOOM_MS) {
+    const t = sinceDetonationMs / FIREBALL_BLOOM_MS;
+    scale = 1 - (1 - t) * (1 - t);
+    alpha = t;
+  } else {
+    const t =
+      (sinceDetonationMs - FIREBALL_BLOOM_MS) / FIREBALL_DISPERSE_MS;
+    const expandU = 1 - (1 - t) * (1 - t);
+    scale = 1 + FIREBALL_DISPERSE_EXPAND * expandU;
+    alpha = (1 - t) * (1 - t);
+  }
+  if (alpha <= 0 || scale <= 0) return;
+  // Mismatched-frequency sines drive per-frame radius wobble on
+  // each layer so the silhouette flickers without locking to the
+  // frame clock. Same trick as the dynamite fireball.
+  const jitterAt = (idx: number, phase: number): number =>
+    Math.sin(
+      (sinceDetonationMs / 1000) * Math.PI * 2 * FLAME_JITTER_FREQS_HZ[idx] +
+        phase,
+    ) * FLAME_JITTER_AMPLITUDE;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const det of detonators) {
+    const cx = (det.column + 0.5) * cellSize;
+    const cy = canvasHeight - (det.row + 0.5) * cellSize;
+    drawDetFireblob(
+      ctx,
+      cx,
+      cy,
+      cellSize *
+        FIREBALL_OUTER_RADIUS_CELLS *
+        scale *
+        (1 + jitterAt(0, 0.5)),
+      alpha,
+      'wake',
+    );
+    drawDetFireblob(
+      ctx,
+      cx,
+      cy,
+      cellSize *
+        FIREBALL_BODY_RADIUS_CELLS *
+        scale *
+        (1 + jitterAt(1, 1.7)),
+      alpha,
+      'body',
+    );
+    drawDetFireblob(
+      ctx,
+      cx,
+      cy,
+      cellSize *
+        FIREBALL_INNER_RADIUS_CELLS *
+        scale *
+        (1 + jitterAt(2, 3.4)),
+      alpha,
+      'leading',
+    );
+  }
+  ctx.restore();
+}
+
+function drawDetFireblob(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  alpha: number,
+  kind: 'leading' | 'body' | 'wake',
+): void {
+  if (r <= 0) return;
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  if (kind === 'leading') {
+    grad.addColorStop(0, `rgba(255, 255, 245, ${0.95 * alpha})`);
+    grad.addColorStop(0.3, `rgba(255, 240, 150, ${0.85 * alpha})`);
+    grad.addColorStop(0.7, `rgba(255, 180, 50, ${0.55 * alpha})`);
+    grad.addColorStop(1, 'rgba(255, 110, 20, 0)');
+  } else if (kind === 'body') {
+    grad.addColorStop(0, `rgba(255, 230, 130, ${0.85 * alpha})`);
+    grad.addColorStop(0.4, `rgba(255, 180, 60, ${0.65 * alpha})`);
+    grad.addColorStop(0.8, `rgba(240, 110, 30, ${0.4 * alpha})`);
+    grad.addColorStop(1, 'rgba(200, 70, 20, 0)');
+  } else {
+    grad.addColorStop(0, `rgba(255, 150, 50, ${0.55 * alpha})`);
+    grad.addColorStop(0.5, `rgba(220, 90, 30, ${0.4 * alpha})`);
+    grad.addColorStop(1, 'rgba(120, 50, 20, 0)');
+  }
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCellFlashes(
+  ctx: CanvasRenderingContext2D,
+  cleared: readonly Pos[],
+  arrivalByKey: ReadonlyMap<string, number>,
+  elapsedMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const cell of cleared) {
+    const arrivalMs = arrivalByKey.get(cellKey(cell.row, cell.column));
+    if (arrivalMs === undefined) continue;
+    const sinceArrivalMs = elapsedMs - arrivalMs;
+    if (sinceArrivalMs < 0 || sinceArrivalMs >= CELL_WHITE_FLASH_MS) continue;
+    const t = sinceArrivalMs / CELL_WHITE_FLASH_MS;
+    const alpha = (1 - t) * (1 - t);
+    const cx = (cell.column + 0.5) * cellSize;
+    const cy = canvasHeight - (cell.row + 0.5) * cellSize;
+    const r = cellSize * CELL_WHITE_FLASH_RADIUS_CELLS;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+    grad.addColorStop(0.7, `rgba(255, 250, 230, ${alpha * 0.5})`);
+    grad.addColorStop(1, 'rgba(255, 240, 200, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDetEmbers(
+  ctx: CanvasRenderingContext2D,
+  embers: readonly DetEmber[],
+  blastElapsedMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const ember of embers) {
+    const ageMs = blastElapsedMs - ember.birthMs;
+    if (ageMs < 0 || ageMs >= ember.lifetimeMs) continue;
+    const t = ageMs / ember.lifetimeMs;
+    // Outward motion eases out: shoots fast at birth, slows as it
+    // fades. Gravity adds a parabolic downward sag.
+    const u = 1 - (1 - t) * (1 - t);
+    const dist = ember.speedCells * cellSize * u;
+    const sag = ember.gravityCells * t * t * cellSize;
+    const baseX = ember.originColumnCells * cellSize;
+    const baseY = canvasHeight - ember.originRowCells * cellSize;
+    const x = baseX + Math.cos(ember.angleRad) * dist;
+    const y = baseY - Math.sin(ember.angleRad) * dist + sag;
+    const radius = ember.baseRadiusPx * (1 - EMBER_SHRINK_FACTOR * t);
+    const alpha = (1 - t) * (1 - t);
+    drawEmber(ctx, x, y, radius, alpha, ember.hue);
+  }
+  ctx.restore();
+}
+
+function drawDetSmoke(
+  ctx: CanvasRenderingContext2D,
+  wisps: readonly DetSmokeWisp[],
+  blastElapsedMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  // Default composite (not 'lighter') so smoke darkens against the
+  // sky behind the playfield, like real smoke.
+  ctx.save();
+  for (const wisp of wisps) {
+    const ageMs = blastElapsedMs - wisp.birthMs;
+    if (ageMs < 0 || ageMs >= DET_SMOKE_LIFETIME_MS) continue;
+    const t = ageMs / DET_SMOKE_LIFETIME_MS;
+    const cx = wisp.originColumnCells * cellSize;
+    const baseY = canvasHeight - wisp.originRowCells * cellSize;
+    const cy = baseY - DET_SMOKE_DRIFT_CELLS * t * cellSize;
+    const radius = cellSize * DET_SMOKE_RADIUS_FACTOR * (0.6 + 0.7 * t);
+    // Quick fade-in so wisps don't pop, quadratic fade-out so they
+    // dissipate cleanly.
+    const fadeIn = clamp01(t * 4);
+    const fadeOut = 1 - t;
+    const alpha = 0.45 * fadeIn * fadeOut * fadeOut;
+    if (alpha <= 0) continue;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    grad.addColorStop(0, `rgba(110, 95, 85, ${alpha})`);
+    grad.addColorStop(0.6, `rgba(90, 78, 70, ${alpha * 0.6})`);
+    grad.addColorStop(1, 'rgba(60, 50, 45, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawShockwave(
+  ctx: CanvasRenderingContext2D,
+  detonators: readonly Pos[],
+  sinceDetonationMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  // The ring keeps a steady alpha until it has cleared the corners
+  // (Euclidean distance √2 from a detonator), then fades out over
+  // SHOCKWAVE_TRAIL_MS so it dissolves rather than popping out.
+  const cornerArrivalMs = Math.SQRT2 * DETONATOR_SHOCKWAVE_MS_PER_CELL;
+  const ringTotalMs = cornerArrivalMs + SHOCKWAVE_TRAIL_MS;
+  if (sinceDetonationMs >= ringTotalMs) return;
+  const radiusPx =
+    (sinceDetonationMs / DETONATOR_SHOCKWAVE_MS_PER_CELL) * cellSize;
+  if (radiusPx <= 0) return;
+  let alpha;
+  if (sinceDetonationMs < cornerArrivalMs) {
+    alpha = 1;
+  } else {
+    const trailT =
+      (sinceDetonationMs - cornerArrivalMs) / SHOCKWAVE_TRAIL_MS;
+    alpha = (1 - trailT) * (1 - trailT);
+  }
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const det of detonators) {
+    const cx = (det.column + 0.5) * cellSize;
+    const cy = canvasHeight - (det.row + 0.5) * cellSize;
+    drawShockwaveRing(ctx, cx, cy, radiusPx, alpha, cellSize);
+  }
+  ctx.restore();
+}
+
+function drawShockwaveRing(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radiusPx: number,
+  alpha: number,
+  cellSize: number,
+): void {
+  const halfThickness = cellSize * SHOCKWAVE_HALF_THICKNESS_CELLS;
+  const outerR = radiusPx + halfThickness;
+  if (outerR <= 0) return;
+  const innerR = Math.max(0, radiusPx - halfThickness);
+  // Radial gradient between innerR and outerR: t=0 inner edge
+  // (transparent), peak hot color in the middle, pale-blue tint at
+  // the leading edge fading to fully transparent at outerR.
+  const grad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
+  grad.addColorStop(0, 'rgba(255, 250, 220, 0)');
+  grad.addColorStop(0.4, `rgba(255, 250, 220, ${alpha * 0.85})`);
+  grad.addColorStop(0.7, `rgba(220, 240, 255, ${alpha * 0.65})`);
+  grad.addColorStop(1, 'rgba(180, 220, 255, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // Gravity --------------------------------------------------------

@@ -3,6 +3,48 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-04 — Animated the detonator detonation
+
+The `detonate` step landed in the core earlier today with a 0 ms
+duration — gameplay correct but visually instantaneous. Filled
+that in with a real explosion animation. The shape: a 100 ms
+cartoony y-squash on the detonator (anticipation before the
+bang), then ~580 ms of fireball, with ambient embers and smoke
+wisps lingering past the flame for an aftermath tail. Total
+~1 s.
+
+The composition is layered. A brief detonation flash punctuates
+the moment of detonation. A thin shockwave ring with a pale-
+blue tint at its leading edge expands outward at high speed —
+the only cool-toned element, and the one thing that's clearly
+distinct from the dynamite blast. Then a multi-layered fireball
+blooms outward to ~2 cells radius, generously spilling past the
+3×3 destruction zone into adjacent cells. Each cleared cell
+stays rendered until the fireball's outer edge sweeps past it,
+then bursts into a small radial cloud of debris embers fired
+from its own center — destroyed elements visibly react rather
+than just disappearing under the flame. Continuous embers shed
+from random points within the fireball body during bloom, and
+smoke wisps lift from the explosion area and linger past the
+fade.
+
+Two visual lessons surfaced during iteration. The original
+minimal version, following the spec literally, was a thin
+shockwave plus a few sparks — too polite for a 9-cell wipe. And
+the first fireball had a 250 ms sustain phase where it held at
+full size before fading; that read as unnatural, like a glow
+pulsing in place. Dropped the sustain entirely and let the
+fireball keep expanding outward by ~20% during the fade so it
+disperses into the air, closer to how real explosions look.
+Tied per-cell engulfment to the actual bloom curve
+(`t = B · (1 - √(1 - d/R))`) rather than a separate per-cell
+rate, so each sprite's disappearance lines up exactly with the
+visible flame edge — no stale frames where the sprite hangs
+around inside the fireball. Multi-detonator falls out
+naturally: every layer animates in parallel from its own
+center; overlapping fireballs additively brighten the seam,
+which reads as right.
+
 ## 2026-05-04 — Wired the detonator into the core
 
 The `detonator` Cell kind had been on the board since the first
