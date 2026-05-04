@@ -22,9 +22,12 @@ import type {
 
 const REACTIVE_TIER_MAX = 11;
 
-// Drive the board to a stable state. Each iteration finds every
+// Drive the board to a stable state. An initial gravity pass handles
+// suspended cells in the input — a no-op for clean post-land boards
+// but essential after a detonation, which can leave holes in the
+// columns adjacent to the blast. Then each iteration finds every
 // connected component of size ≥ 3 of a single reactive tier, resolves
-// them all simultaneously into one merge step, then applies per-column
+// them all simultaneously into one merge step, and applies per-column
 // gravity (skipping the gravity step entirely when nothing moved).
 // Loop until no reacting groups exist.
 //
@@ -38,6 +41,14 @@ export function runCascade(
 ): { board: Board; steps: Step[] } {
   let current = board;
   const steps: Step[] = [];
+  const initial = applyGravity(current);
+  if (initial.movements.length > 0) {
+    current = initial.board;
+    steps.push({
+      event: { kind: 'gravity', movements: initial.movements },
+      snapshot: { ...priorState, board: current, active: null },
+    });
+  }
   while (true) {
     const groups = findReactingGroups(current);
     if (groups.length === 0) break;

@@ -125,7 +125,11 @@ export type StepEvent =
   | { readonly kind: "solo-land"; readonly landingRow: number }
   | { readonly kind: "merge"; readonly groups: readonly ReactingGroup[] }
   | { readonly kind: "gravity"; readonly movements: readonly Movement[] }
-  | { readonly kind: "detonate" }
+  | {
+      readonly kind: "detonate";
+      readonly detonators: readonly Pos[];
+      readonly cleared: readonly Pos[];
+    }
   | {
       readonly kind: "dynamite-blast";
       readonly column: number;

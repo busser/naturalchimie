@@ -828,3 +828,343 @@ describe('applyInput / drop / lose condition', () => {
     expect(next.board[7][3]).toEqual({ kind: 'detonator' });
   });
 });
+
+describe('applyInput / drop / detonator', () => {
+  it('triggers when a pair half settles directly above a detonator', () => {
+    // Detonator at (row 0, col 3). The horizontal pair lands tier 5
+    // at (row 1, col 3) — directly above the detonator — and tier 5
+    // at (row 0, col 4). The detonator's 3×3 blast clears (0,2),
+    // (0,3), (0,4), (1,2), (1,3), (1,4); rows -1 are out of bounds.
+    // Both halves of the pair are in the cleared zone.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 5, 5), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'detonate',
+      'spawn',
+    ]);
+    const detonate = steps[1].event;
+    if (detonate.kind !== 'detonate') throw new Error('expected detonate');
+    expect(detonate.detonators).toEqual([{ row: 0, column: 3 }]);
+    expect(detonate.cleared).toEqual([
+      { row: 0, column: 3 },
+      { row: 0, column: 4 },
+      { row: 1, column: 3 },
+    ]);
+    // Stable board has nothing left.
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        expect(next.board[r][c]).toEqual({ kind: 'empty' });
+      }
+    }
+  });
+
+  it('matches acceptance test 3.2 — detonator triggered by next drop clears the 3×3', () => {
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 5, 5), board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    // Score = 0; both pair halves and the detonator are gone.
+    expect(next.score).toBe(0);
+    expect(next.board[0][3]).toEqual({ kind: 'empty' });
+    expect(next.board[0][4]).toEqual({ kind: 'empty' });
+    expect(next.board[1][3]).toEqual({ kind: 'empty' });
+  });
+
+  it('clamps the 3×3 against the left wall', () => {
+    // Detonator at (row 0, col 0): the blast covers (0,0), (0,1),
+    // (1,0), (1,1) — four cells, since the rest is off-grid.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      E . . . . . .
+    `);
+    const state = makeState(pair(0, 'vertical', 5, 5), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    // Vertical pair at column 0: bottom (first=5) lands at row 1,
+    // top (second=5) at row 2. Bottom triggers the detonator. The 3×3
+    // covers rows 0–1, columns 0–1. The top half at row 2 is outside
+    // the blast and falls under post-detonation gravity to row 0.
+    const detonate = steps[1].event;
+    if (detonate.kind !== 'detonate') throw new Error('expected detonate');
+    expect(detonate.cleared).toEqual([
+      { row: 0, column: 0 },
+      { row: 1, column: 0 },
+    ]);
+    // Top half survives, gravity drops it to the floor.
+    expect(next.board[0][0]).toEqual({ kind: 'element', tier: 5 });
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'detonate',
+      'gravity',
+      'spawn',
+    ]);
+  });
+
+  it('triggers two detonators simultaneously when a horizontal pair lands on both', () => {
+    // Detonators at (0, 3) and (0, 4). Horizontal pair lands tier-5s
+    // at (1, 3) and (1, 4). Both detonators trigger; union of their
+    // 3×3 zones covers rows 0–1, columns 2–5 — eight cells (the
+    // detonators plus their overlapping neighborhoods).
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E E . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 5, 5), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    const detonate = steps[1].event;
+    if (detonate.kind !== 'detonate') throw new Error('expected detonate');
+    expect(detonate.detonators).toEqual([
+      { row: 0, column: 3 },
+      { row: 0, column: 4 },
+    ]);
+    // Cleared cells: both detonators and both pair halves. Adjacent
+    // cells in the union are empty so they don't appear in `cleared`.
+    expect(detonate.cleared).toEqual([
+      { row: 0, column: 3 },
+      { row: 0, column: 4 },
+      { row: 1, column: 3 },
+      { row: 1, column: 4 },
+    ]);
+  });
+
+  it('matches acceptance test 3.3 — only the triggered detonator fires; the second sits outside its blast', () => {
+    // Detonators at (0, 2) and (0, 4). Horizontal pair [1/1] at
+    // column 3 lands tier-1 at (row 2, col 3) on top of the detonator
+    // at (0, 2)? No — the spec test is column 3 which lands the left
+    // half above the col-2 detonator's adjacent column. Re-read:
+    // pair `[1/1]` at column 3 lands left-half at column 3, right-half
+    // at column 4. Column 3 is empty, left lands at row 0… but the
+    // detonator at (0, 2) means column 3 is empty at row 0, so left
+    // lands at row 0, NOT on a detonator. The acceptance test
+    // diagram has the pair landing above the detonator at column 3;
+    // re-checking the diagram shows the detonators are at columns 3
+    // and 5 (1-indexed in the spec), i.e. code columns 2 and 4. Pair
+    // is at spec column 3 = code column 2 — so left-half lands on
+    // top of the col-2 detonator. Let's reconstruct.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . E . E . .
+    `);
+    const state = makeState(pair(2, 'horizontal', 1, 1), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'detonate',
+      'spawn',
+    ]);
+    const detonate = steps[1].event;
+    if (detonate.kind !== 'detonate') throw new Error('expected detonate');
+    // Only the col-2 detonator triggers — its 3×3 covers cols 1–3,
+    // rows 0–1. The col-4 detonator is outside that zone (column 4
+    // is beyond column 3) and survives.
+    expect(detonate.detonators).toEqual([{ row: 0, column: 2 }]);
+    expect(next.board[0][4]).toEqual({ kind: 'detonator' });
+    // Both pair halves are gone: the left half at (1, 2) was the
+    // trigger; the right half at (0, 3) is in the 3×3.
+    expect(next.board[1][2]).toEqual({ kind: 'empty' });
+    expect(next.board[0][3]).toEqual({ kind: 'empty' });
+    expect(next.score).toBe(0);
+  });
+
+  it('destroys an in-blast detonator without chain-triggering it', () => {
+    // Detonators at (0, 3) and (0, 4). A single pair half on (1, 3)
+    // triggers only the col-3 detonator; the col-4 detonator falls
+    // inside its 3×3 and is silently destroyed.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E E . .
+    `);
+    // Vertical pair so only the bottom half (column 3) lands.
+    const state = makeState(pair(3, 'vertical', 5, 5), board);
+    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    const detonate = steps[1].event;
+    if (detonate.kind !== 'detonate') throw new Error('expected detonate');
+    // Only one trigger: the in-blast detonator does not chain.
+    expect(detonate.detonators).toEqual([{ row: 0, column: 3 }]);
+    // Both detonators are present in the detonate snapshot's cleared
+    // cells, even though only one triggered.
+    expect(detonate.cleared).toContainEqual({ row: 0, column: 3 });
+    expect(detonate.cleared).toContainEqual({ row: 0, column: 4 });
+    // The detonate step's snapshot has both detonator cells empty.
+    const post = steps[1].snapshot.board;
+    expect(post[0][3]).toEqual({ kind: 'empty' });
+    expect(post[0][4]).toEqual({ kind: 'empty' });
+  });
+
+  it('triggers the existing detonator when a detonator lands on it; the new detonator is destroyed before being armed', () => {
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E . . .
+    `);
+    const state = makeState({ kind: 'detonator', column: 3 }, board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'solo-land',
+      'detonate',
+      'spawn',
+    ]);
+    const detonate = steps[1].event;
+    if (detonate.kind !== 'detonate') throw new Error('expected detonate');
+    expect(detonate.detonators).toEqual([{ row: 0, column: 3 }]);
+    // Both detonators (the existing one at (0,3) and the new one at
+    // (1,3)) are gone.
+    expect(next.board[0][3]).toEqual({ kind: 'empty' });
+    expect(next.board[1][3]).toEqual({ kind: 'empty' });
+  });
+
+  it('triggers the detonator when a dynamite would settle directly above it; no dynamite-blast step', () => {
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E . . .
+    `);
+    const state = makeState({ kind: 'dynamite', column: 3 }, board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'solo-land',
+      'detonate',
+      'spawn',
+    ]);
+    // The solo-land snapshot still shows the original board (the
+    // dynamite is never a Cell). The detonate snapshot shows the
+    // post-blast board.
+    const [solo, detonate] = steps;
+    expect(solo.event).toEqual({ kind: 'solo-land', landingRow: 1 });
+    expect(solo.snapshot.board[0][3]).toEqual({ kind: 'detonator' });
+    if (detonate.event.kind !== 'detonate') throw new Error('expected detonate');
+    expect(detonate.event.detonators).toEqual([{ row: 0, column: 3 }]);
+    expect(next.board[0][3]).toEqual({ kind: 'empty' });
+  });
+
+  it('runs post-detonation gravity to settle suspended cells in adjacent columns', () => {
+    // Detonator at (0, 3) on the floor, topmost in its (single-cell)
+    // column. Column 2 has tier-7/9/7 stacked rows 0–2 (size-2
+    // groups, no reaction) with tier-A suspended-after-blast at row
+    // 3. Column 4 has tier-8/8 at rows 0–1 (in the blast).
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . A . . . .
+      . . 7 . . . .
+      . . 9 . 8 . .
+      . . 7 E 8 . .
+    `);
+    const state = makeState(pair(3, 'vertical', 5, 5), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    // Vertical pair: first (bottom) lands at (1, 3) above the
+    // detonator. Second (top) lands at (2, 3). The 3×3 around
+    // (0, 3) covers rows 0–1, cols 2–4 — clearing the col-2 row 0/1
+    // supports, the detonator, the bottom pair half, and both col-4
+    // tier-8s. The top pair half at (2, 3) survives. Tier-7 at
+    // (row 2, col 2) and tier-A at (row 3, col 2) are suspended.
+    expect(steps.map((s) => s.event.kind)).toEqual([
+      'pair-land',
+      'detonate',
+      'gravity',
+      'spawn',
+    ]);
+    // Post-gravity: col 2 tier-7 at row 0, tier-A at row 1; col 3
+    // tier-5 at row 0; col 4 empty.
+    expect(next.board[0][2]).toEqual({ kind: 'element', tier: 7 });
+    expect(next.board[1][2]).toEqual({ kind: 'element', tier: 10 });
+    expect(next.board[0][3]).toEqual({ kind: 'element', tier: 5 });
+    expect(next.board[0][4]).toEqual({ kind: 'empty' });
+  });
+
+  it('shrinks the spawn pool when the detonator destroys the highest tier', () => {
+    // Acceptance test 4.5 with a detonator instead of dynamite. The
+    // detonator is the topmost cell of column 3, with the lone
+    // tier-5 next door at (row 1, col 4) — inside the blast's 3×3.
+    // Dropping a [1/1] horizontal pair triggers the detonator and
+    // destroys the tier-5, dropping the highest surviving tier to 2.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . E 5 . .
+      . . 1 2 1 . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 1), board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    expect(next.preview.kind).toBe('pair');
+    const newPreview = next.preview as Extract<Piece, { kind: 'pair' }>;
+    expect([1, 2]).toContain(newPreview.first);
+    expect([1, 2]).toContain(newPreview.second);
+  });
+
+  it('updates the score on the detonate step when nothing reacts afterward', () => {
+    // Detonator at (0, 3) with tier-5s in the surrounding cells.
+    // The blast clears them all; post-blast board is empty; score
+    // should snap to 0 on the detonate step (the last step before
+    // spawn).
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . 5 . 5 . .
+      . . 5 E 5 . .
+    `);
+    const state = makeState(pair(3, 'vertical', 1, 1), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    // Score recompute lands on the last cascade-or-land step — here
+    // the detonate step (no cascade follows because the surviving
+    // top half of the pair settles via gravity but produces no merge).
+    const detonate = steps.find((s) => s.event.kind === 'detonate');
+    if (!detonate) throw new Error('expected detonate step');
+    // The recomputed score reflects the post-blast (and post-gravity)
+    // board. The four tier-5s and both pair halves are gone via the
+    // blast; the surviving top of the pair (tier 1) falls into column
+    // 3 — score = 1.
+    expect(next.score).toBe(1);
+  });
+});

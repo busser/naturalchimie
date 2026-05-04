@@ -3,6 +3,53 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-04 — Wired the detonator into the core
+
+The `detonator` Cell kind had been on the board since the first
+lose-condition pass, but the spec's "trigger when an element
+settles directly above a detonator" rule wasn't actually enforced.
+Dropping a piece onto one was a no-op. Closed that gap.
+
+The added shape is a discrete `detonate` step that sits between
+`pair-land` (or `solo-land`) and the cascade. Spec orders the
+phases that way: the trigger places an element on top of the
+detonator, the 9-cell area clears, gravity applies, then reactions.
+Each phase is its own self-contained animation, matching the
+codebase's "one step per visual transition" rule. The `detonate`
+event was already stubbed in `StepEvent`; gave it a payload of
+`{ detonators: Pos[], cleared: Pos[] }` so the animation layer can
+place the explosion graphic at each trigger and fade out the
+cleared cells without diffing snapshots.
+
+Three landing paths can trigger a detonator. A pair half settles
+directly above one — both halves checked independently for
+horizontal pairs; only the bottom half can trigger for vertical
+pairs since the top rests on its sibling. A solo detonator lands
+above an existing detonator (the existing one triggers, both
+gone). A dynamite would settle above one (the detonator triggers
+first, no `dynamite-blast` step is emitted) — the trigger
+condition is met at the moment the dynamite settles, before its
+fuse can light. A horizontal pair on two detonators triggers both,
+with the union of their 3×3 zones (clamped to grid bounds) cleared
+in a single pass. A detonator caught inside another's blast is
+destroyed silently, no chain trigger.
+
+`runCascade` needed one touch. Detonations leave holes in the
+columns adjacent to the blast — cells suspended above the cleared
+rows in c-1 and c+1 — and the existing cascade only emitted
+`gravity` after a `merge`. Added an initial gravity pass at the
+top of `runCascade` so post-detonation suspended cells fall before
+the reaction check. No-op for clean post-land boards (no movements
+→ no step emitted), so unrelated tests stay green.
+
+Tests cover acceptance scenarios 3.2 and 3.3 plus the edge cases
+the spec calls out: wall-clamped 3×3, dual-trigger horizontal
+pair, in-blast detonator destroyed without chaining,
+dynamite-on-detonator, detonator-on-detonator, post-blast gravity
+in adjacent columns, and the spawn pool shrinking when the
+detonator destroys the highest tier (detonator analogue of
+acceptance test 4.5).
+
 ## 2026-05-04 — Added a dev-mode preview re-roll
 
 Playtesting specific cascades is awkward when the only handle on

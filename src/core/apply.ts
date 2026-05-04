@@ -6,7 +6,15 @@
 import { runCascade } from './cascade';
 import { computeScore } from './score';
 import { pieceToActive, samplePiece } from './spawn';
-import type { ActivePiece, Board, Cell, Input, State, Step } from './state';
+import type {
+  ActivePiece,
+  Board,
+  Cell,
+  Input,
+  Pos,
+  State,
+  Step,
+} from './state';
 import type { Rng } from './rng';
 
 const COLUMN_MIN = 0;
@@ -189,43 +197,80 @@ function landActive(state: State, active: ActivePiece): LandResult {
         active,
       );
       const snapshot: State = { ...state, board, active: null };
+      const landStep: Step = {
+        event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
+        snapshot,
+      };
+      // A pair half triggers a detonator when it settles directly on
+      // top of one. For a horizontal pair both columns are checked
+      // independently; for a vertical pair only the bottom (first)
+      // half can be a trigger, since the top half rests on its sibling.
+      const triggers: Pos[] = [];
+      const firstColumn = active.column;
+      if (sittingOnDetonator(state.board, firstColumn, firstLandingRow)) {
+        triggers.push({ row: firstLandingRow - 1, column: firstColumn });
+      }
+      if (active.orientation === 'horizontal') {
+        const secondColumn = active.column + 1;
+        if (sittingOnDetonator(state.board, secondColumn, secondLandingRow)) {
+          triggers.push({ row: secondLandingRow - 1, column: secondColumn });
+        }
+      }
+      if (triggers.length === 0) return { board, landSteps: [landStep] };
+      const detonateStep = buildDetonateStep(state, board, triggers);
       return {
-        board,
-        landSteps: [
-          {
-            event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
-            snapshot,
-          },
-        ],
+        board: detonateStep.snapshot.board,
+        landSteps: [landStep, detonateStep],
       };
     }
     case 'detonator': {
-      // The spec's "if a piece lands on a detonator, the detonator
-      // triggers first" handles a piece dropped *onto* an existing
-      // detonator. Dropping the detonator itself just lands it as a
-      // board cell, waiting for a future piece to set it off.
       const { board, landingRow } = landSolo(state.board, active.column, {
         kind: 'detonator',
       });
       const snapshot: State = { ...state, board, active: null };
-      return {
-        board,
-        landSteps: [
-          { event: { kind: 'solo-land', landingRow }, snapshot },
-        ],
+      const landStep: Step = {
+        event: { kind: 'solo-land', landingRow },
+        snapshot,
       };
+      // Detonator-on-detonator: the existing detonator (one row below
+      // the new one's landing cell) triggers, and its 3×3 blast clears
+      // the new detonator before it has a chance to be armed.
+      if (sittingOnDetonator(state.board, active.column, landingRow)) {
+        const triggers: Pos[] = [
+          { row: landingRow - 1, column: active.column },
+        ];
+        const detonateStep = buildDetonateStep(state, board, triggers);
+        return {
+          board: detonateStep.snapshot.board,
+          landSteps: [landStep, detonateStep],
+        };
+      }
+      return { board, landSteps: [landStep] };
     }
     case 'dynamite': {
       // The dynamite is never a Cell — it falls and is consumed by
       // its own blast. Two steps cover the journey: a solo-land tween
       // onto an unchanged board, then the dynamite-blast that clears
       // the column from row 0 up to and including landingRow.
-      // TODO(busser): when detonator triggering lands, intercept the
-      // case where the dynamite would settle directly above a
-      // detonator — the detonator triggers first and destroys the
-      // dynamite before it can explode.
       const landingRow = lowestEmptyRow(state.board, active.column);
       const soloSnapshot: State = { ...state, active: null };
+      const soloStep: Step = {
+        event: { kind: 'solo-land', landingRow },
+        snapshot: soloSnapshot,
+      };
+      // Dynamite-on-detonator: the detonator triggers first and the
+      // dynamite is destroyed before its fuse can light. No
+      // dynamite-blast step is emitted.
+      if (sittingOnDetonator(state.board, active.column, landingRow)) {
+        const triggers: Pos[] = [
+          { row: landingRow - 1, column: active.column },
+        ];
+        const detonateStep = buildDetonateStep(state, state.board, triggers);
+        return {
+          board: detonateStep.snapshot.board,
+          landSteps: [soloStep, detonateStep],
+        };
+      }
       const blastBoard = clearColumnSegment(
         state.board,
         active.column,
@@ -240,7 +285,7 @@ function landActive(state: State, active: ActivePiece): LandResult {
       return {
         board: blastBoard,
         landSteps: [
-          { event: { kind: 'solo-land', landingRow }, snapshot: soloSnapshot },
+          soloStep,
           {
             event: {
               kind: 'dynamite-blast',
@@ -253,6 +298,54 @@ function landActive(state: State, active: ActivePiece): LandResult {
       };
     }
   }
+}
+
+function sittingOnDetonator(
+  board: Board,
+  column: number,
+  landingRow: number,
+): boolean {
+  if (landingRow <= 0) return false;
+  return board[landingRow - 1][column].kind === 'detonator';
+}
+
+// Apply the union of every triggered detonator's 3×3 zone (clamped to
+// the grid) to `board`. Each triggered detonator clears its Moore
+// neighborhood plus its own cell. A detonator caught inside another
+// detonator's blast is destroyed silently (no chain trigger): the
+// caller decides which detonators trigger and only those go in.
+function buildDetonateStep(
+  priorState: State,
+  board: Board,
+  triggers: readonly Pos[],
+): Step {
+  const next: Cell[][] = board.map((row) => [...row]);
+  const cleared: Pos[] = [];
+  const seen = new Set<number>();
+  const width = board[0].length;
+  for (const det of triggers) {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = det.row + dr;
+        const c = det.column + dc;
+        if (r < 0 || r >= board.length) continue;
+        if (c < 0 || c >= width) continue;
+        const key = r * width + c;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (next[r][c].kind === 'empty') continue;
+        next[r][c] = { kind: 'empty' };
+        cleared.push({ row: r, column: c });
+      }
+    }
+  }
+  cleared.sort(
+    (a, b) => a.row - b.row || a.column - b.column,
+  );
+  return {
+    event: { kind: 'detonate', detonators: triggers, cleared },
+    snapshot: { ...priorState, board: next, active: null },
+  };
 }
 
 function clearColumnSegment(
