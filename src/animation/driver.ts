@@ -73,8 +73,10 @@ export const FIREBALL_TIME_SCALE = 3;
 // the flame consumes them. Per-cell engulfment timing is derived
 // inside effects.ts from the fireball's actual bloom curve, so
 // each cell's sprite vanishes exactly as the visible flame edge
-// sweeps past it.
-export const DETONATOR_PRESS_MS = 100;
+// sweeps past it. The press is long enough for the eye to
+// register the wind-up: a too-short press lets the detonation feel
+// arbitrary rather than earned.
+export const DETONATOR_PRESS_MS = 200;
 export const DETONATOR_EFFECTS_MS = 900;
 export const DETONATOR_SHOCKWAVE_MS_PER_CELL = 50;
 

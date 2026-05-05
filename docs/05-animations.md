@@ -23,7 +23,7 @@ hand-drawn charm did not depend on flashy effects.
 | Inter-cascade pause | 80 ms |
 | Gravity fall (per cell of distance) | 50 ms |
 | Dynamite explosion travel (per cell) | 60 ms |
-| Detonator plunger press | 100 ms |
+| Detonator plunger press | 200 ms |
 | Detonator detonation effects | 900 ms |
 | Preview slide-out / slide-in | 200 ms each, with ~80 ms gap |
 | Game-over fade | 600 ms |
@@ -228,12 +228,20 @@ When something is dropped directly onto a detonator:
 
 1. The triggering item settles into its cell with the normal
    drop/settle animation.
-2. **Plunger press (~100 ms).** The detonator y-squashes into
+2. **Plunger press (~200 ms).** The detonator y-squashes into
    its cell — the whole sprite compresses vertically, pivoting
    on the cell's floor, with a small upward bounce in the final
-   ~20 ms before bottoming out (cartoony anticipation). Box and
+   ~40 ms before bottoming out (cartoony anticipation). Box and
    plunger move as one shape; we don't try to compress only the
-   plunger.
+   plunger. As the press deepens, two additional layers build:
+   a translation jitter on the squashed sprite (high-frequency
+   side-to-side rumble, amplitude eased in across the press so
+   the box reads as straining to contain something) and a warm
+   yellow-orange glow under the cell (light leaking from the
+   seams, alpha eased in cubically so it commits in the final
+   third). Both layers peak at the bounce, hand off into the
+   detonation flash, and sell the moment as compressed energy
+   rather than a passive squash.
 3. **Detonation fires** the moment the press completes.
 
 The detonation itself plays out over ~900 ms post-detonation, in
@@ -303,7 +311,7 @@ The detonator itself is engulfed at distance 0 (immediately at
 detonation). It is destroyed alongside everything else in the
 3×3 area.
 
-Total duration: ~1000 ms (100 ms plunger press + 900 ms
+Total duration: ~1100 ms (200 ms plunger press + 900 ms
 detonation effects).
 
 The trigger-then-flash sequence has special cases:

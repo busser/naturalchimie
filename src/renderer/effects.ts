@@ -1364,6 +1364,23 @@ const SQUASH_BOUNCE = 0.85;
 // compresses, then t in [0.8, 1] eases back up before detonation.
 const SQUASH_BOUNCE_START_T = 0.8;
 
+// Anticipation jitter on the squashed detonator. Translation (not
+// scale) so it layers cleanly with the squash curve: the box looks
+// like it's straining to contain something rather than vibrating
+// in place. Amplitude ramps from 0 across the press, so the rumble
+// builds — by the time it's loud enough to read, the plunger is
+// also at peak compression.
+const PRESS_JITTER_AMPLITUDE_PX = 1.5;
+const PRESS_JITTER_FREQ_X_HZ = 32;
+const PRESS_JITTER_FREQ_Y_HZ = 39;
+
+// Warm anticipation glow under the cell during the press. Builds
+// alpha through the press, peaking at the bounce — the seam-leaked
+// light right before the bang. Color matches the detonation flash
+// so the glow reads as the same fire about to burst.
+const PRESS_GLOW_RADIUS_CELLS = 0.65;
+const PRESS_GLOW_PEAK_ALPHA = 0.55;
+
 const DETONATION_FLASH_PEAK_MS = 35;
 const DETONATION_FLASH_DURATION_MS = 130;
 const DETONATION_FLASH_RADIUS_CELLS = 0.7;
@@ -1631,10 +1648,16 @@ function createDetonateEffect(
       drawDetSmoke(ctx, smokeWisps, elapsedMs, cellSize, canvasHeight);
       // Phase 1: plunger press. Detonators y-squash into the cell
       // floor, with a brief bounce back at the tail of the window.
+      // A warm glow blooms under the cell as the press progresses
+      // (light leaking from the seams), and the squashed sprite
+      // jitters with translation so the box reads as straining.
       // Drawn via draw() (not getSpriteItems) so the effect can
-      // apply a vertical scale around the cell's anchor row.
+      // apply transforms around the cell's anchor row.
       if (elapsedMs < DETONATOR_PRESS_MS) {
-        const squashY = squashCurve(elapsedMs / DETONATOR_PRESS_MS);
+        const pressT = elapsedMs / DETONATOR_PRESS_MS;
+        const squashY = squashCurve(pressT);
+        const jitter = pressJitterOffset(elapsedMs, pressT);
+        drawPressGlow(ctx, detonators, pressT, cellSize, canvasHeight);
         for (const det of detonators) {
           drawSquashedDetonator(
             ctx,
@@ -1642,6 +1665,7 @@ function createDetonateEffect(
             det.column,
             det.row,
             squashY,
+            jitter,
             cellSize,
             canvasHeight,
           );
@@ -1731,6 +1755,7 @@ function drawSquashedDetonator(
   column: number,
   row: number,
   squashY: number,
+  jitter: { readonly x: number; readonly y: number },
   cellSize: number,
   canvasHeight: number,
 ): void {
@@ -1741,10 +1766,55 @@ function drawSquashedDetonator(
   // shrinking toward the cell center.
   const pivotY = cellScreenY + cellSize;
   ctx.save();
-  ctx.translate(0, pivotY);
+  ctx.translate(jitter.x, jitter.y + pivotY);
   ctx.scale(1, squashY);
   ctx.translate(0, -pivotY);
   drawSpriteAtCell(ctx, sprite, cellScreenX, cellScreenY, cellSize);
+  ctx.restore();
+}
+
+function pressJitterOffset(
+  elapsedMs: number,
+  pressT: number,
+): { readonly x: number; readonly y: number } {
+  // Amplitude eases in across the press as t² so the rumble is
+  // imperceptible at the start and unmistakable at the bounce.
+  const amp = PRESS_JITTER_AMPLITUDE_PX * pressT * pressT;
+  const phase = (elapsedMs / 1000) * Math.PI * 2;
+  return {
+    x: amp * Math.sin(phase * PRESS_JITTER_FREQ_X_HZ),
+    y: amp * Math.sin(phase * PRESS_JITTER_FREQ_Y_HZ + 1.0),
+  };
+}
+
+function drawPressGlow(
+  ctx: CanvasRenderingContext2D,
+  detonators: readonly Pos[],
+  pressT: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  // Alpha eases in across the press (t³ — slow start, sharp finish)
+  // so the glow only really commits in the final third, when the
+  // squash is also at its deepest. Radius grows modestly so the
+  // halo expands as well as brightens.
+  const alpha = PRESS_GLOW_PEAK_ALPHA * pressT * pressT * pressT;
+  if (alpha <= 0) return;
+  const radius = cellSize * PRESS_GLOW_RADIUS_CELLS * (0.7 + 0.3 * pressT);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const det of detonators) {
+    const cx = (det.column + 0.5) * cellSize;
+    const cy = canvasHeight - (det.row + 0.5) * cellSize;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    grad.addColorStop(0, `rgba(255, 240, 180, ${alpha})`);
+    grad.addColorStop(0.5, `rgba(255, 200, 90, ${alpha * 0.65})`);
+    grad.addColorStop(1, 'rgba(255, 150, 40, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 
