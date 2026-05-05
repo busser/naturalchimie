@@ -87,7 +87,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
         effect = null;
         effectStep = null;
       } else if (inflight.step !== effectStep) {
-        effect = createEffect(inflight.step, now);
+        effect = createEffect(
+          inflight.step,
+          now,
+          inflight.prevSnapshot,
+          sprites,
+        );
         effectStep = inflight.step;
       }
       ctx.clearRect(0, 0, cssWidth, cssHeight);

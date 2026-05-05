@@ -22,9 +22,9 @@ import {
   FIREBALL_TIME_SCALE,
   GRAVITY_MS_PER_CELL,
   dynamiteDescentDurationMs,
-} from '../animation/driver';
-import type { SpriteAtlas } from '../assets/sprite-loader';
-import { drawSpriteAtCell, type SpriteAsset } from '../assets/sprite-renderer';
+} from "../animation/driver";
+import type { SpriteAtlas } from "../assets/sprite-loader";
+import { drawSpriteAtCell, type SpriteAsset } from "../assets/sprite-renderer";
 import {
   SPAWN_ROW,
   type Movement,
@@ -32,7 +32,7 @@ import {
   type ReactingGroup,
   type State,
   type Step,
-} from '../core/state';
+} from "../core/state";
 
 // Merge animation phases ----------------------------------------
 //
@@ -160,23 +160,30 @@ export type Effect = {
   getCanvasShake?(now: number): { readonly x: number; readonly y: number };
 };
 
-export function createEffect(step: Step, startNow: number): Effect | null {
+export function createEffect(
+  step: Step,
+  startNow: number,
+  prevSnapshot: State,
+  sprites: SpriteAtlas,
+): Effect | null {
   switch (step.event.kind) {
-    case 'merge':
+    case "merge":
       return createMergeEffect(step.event.groups, startNow);
-    case 'gravity':
+    case "gravity":
       return createGravityEffect(step.event.movements, startNow);
-    case 'dynamite-blast':
+    case "dynamite-blast":
       return createDynamiteBlastEffect(
         step.event.column,
         step.event.landingRow,
         startNow,
       );
-    case 'detonate':
+    case "detonate":
       return createDetonateEffect(
         step.event.detonators,
         step.event.cleared,
         startNow,
+        prevSnapshot,
+        sprites,
       );
     default:
       return null;
@@ -200,14 +207,14 @@ type Bubble = {
   readonly scatterAngleRad: number;
   readonly scatterDistanceCells: number;
   readonly baseRadiusPx: number;
-  readonly hue: 'white' | 'pale-yellow';
+  readonly hue: "white" | "pale-yellow";
 };
 
 type Droplet = {
   readonly angleRad: number;
   readonly scatterDistanceCells: number;
   readonly baseRadiusPx: number;
-  readonly hue: 'white' | 'pale-yellow';
+  readonly hue: "white" | "pale-yellow";
 };
 
 type GroupState = {
@@ -320,7 +327,7 @@ function seedGroupStates(groups: readonly ReactingGroup[]): GroupState[] {
             BUBBLE_BASE_RADIUS_MAX_PX,
             Math.random(),
           ),
-          hue: Math.random() < 0.55 ? 'white' : 'pale-yellow',
+          hue: Math.random() < 0.55 ? "white" : "pale-yellow",
         });
       }
     }
@@ -348,7 +355,7 @@ function seedGroupStates(groups: readonly ReactingGroup[]): GroupState[] {
           DROPLET_BASE_RADIUS_MAX_PX,
           Math.random(),
         ),
-        hue: Math.random() < 0.55 ? 'white' : 'pale-yellow',
+        hue: Math.random() < 0.55 ? "white" : "pale-yellow",
       });
     }
     states.push({ group, bubbles, droplets, lastArrivalMs });
@@ -384,11 +391,11 @@ function drawShineHalo(
 ): void {
   const r = cellSize * SHINE_HALO_RADIUS_FACTOR;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
   grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.6})`);
   grad.addColorStop(0.5, `rgba(255, 240, 180, ${intensity * 0.3})`);
-  grad.addColorStop(1, 'rgba(255, 240, 180, 0)');
+  grad.addColorStop(1, "rgba(255, 240, 180, 0)");
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -404,7 +411,7 @@ function drawBubbles(
   canvasHeight: number,
 ): void {
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const bubble of state.bubbles) {
     if (elapsedMs < SHINE_DURATION_MS) continue;
     if (elapsedMs >= bubble.arrivalMs) continue; // absorbed
@@ -419,14 +426,10 @@ function drawBubbles(
     // bulges outward, and curves back into landing.
     const ctrlX =
       cellCx +
-      Math.cos(bubble.scatterAngleRad) *
-        bubble.scatterDistanceCells *
-        cellSize;
+      Math.cos(bubble.scatterAngleRad) * bubble.scatterDistanceCells * cellSize;
     const ctrlY =
       cellCy -
-      Math.sin(bubble.scatterAngleRad) *
-        bubble.scatterDistanceCells *
-        cellSize;
+      Math.sin(bubble.scatterAngleRad) * bubble.scatterDistanceCells * cellSize;
     const oneMinus = 1 - u;
     const x =
       oneMinus * oneMinus * cellCx +
@@ -448,10 +451,10 @@ function drawBubble(
   cy: number,
   coreRadiusPx: number,
   alpha: number,
-  hue: 'white' | 'pale-yellow',
+  hue: "white" | "pale-yellow",
 ): void {
   const haloR = coreRadiusPx * BUBBLE_HALO_RADIUS_FACTOR;
-  const haloEdge = hue === 'white' ? '255, 255, 255' : '255, 247, 200';
+  const haloEdge = hue === "white" ? "255, 255, 255" : "255, 247, 200";
   const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);
   halo.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.85})`);
   halo.addColorStop(0.45, `rgba(${haloEdge}, ${alpha * 0.4})`);
@@ -462,7 +465,7 @@ function drawBubble(
   ctx.fill();
   const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreRadiusPx);
   core.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
-  core.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  core.addColorStop(1, "rgba(255, 255, 255, 0)");
   ctx.fillStyle = core;
   ctx.beginPath();
   ctx.arc(cx, cy, coreRadiusPx, 0, Math.PI * 2);
@@ -508,7 +511,7 @@ function drawCentralOrbAndPop(
   const cx = (group.landing.column + 0.5) * cellSize;
   const cy = canvasHeight - (group.landing.row + 0.5) * cellSize;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   drawCentralOrb(ctx, cx, cy, radius, 1);
   ctx.restore();
 }
@@ -524,7 +527,7 @@ function drawCentralOrb(
   const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);
   halo.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.9})`);
   halo.addColorStop(0.4, `rgba(255, 240, 180, ${alpha * 0.5})`);
-  halo.addColorStop(1, 'rgba(255, 240, 180, 0)');
+  halo.addColorStop(1, "rgba(255, 240, 180, 0)");
   ctx.fillStyle = halo;
   ctx.beginPath();
   ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
@@ -532,7 +535,7 @@ function drawCentralOrb(
   const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, radiusPx);
   core.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
   core.addColorStop(0.7, `rgba(255, 250, 200, ${alpha * 0.7})`);
-  core.addColorStop(1, 'rgba(255, 250, 200, 0)');
+  core.addColorStop(1, "rgba(255, 250, 200, 0)");
   ctx.fillStyle = core;
   ctx.beginPath();
   ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2);
@@ -570,10 +573,9 @@ function drawDroplets(
     (CENTRAL_ORB_BASE_RADIUS_PX +
       CENTRAL_ORB_GROWTH_PX * Math.sqrt(state.bubbles.length));
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const droplet of droplets) {
-    const dist =
-      orbPopRadiusPx + u * droplet.scatterDistanceCells * cellSize;
+    const dist = orbPopRadiusPx + u * droplet.scatterDistanceCells * cellSize;
     const x = cx + Math.cos(droplet.angleRad) * dist;
     const y = cy - Math.sin(droplet.angleRad) * dist + sag;
     drawBubble(
@@ -717,7 +719,7 @@ type Ember = {
   readonly angleRad: number;
   readonly speedCells: number;
   readonly baseRadiusPx: number;
-  readonly hue: 'yellow' | 'orange' | 'red';
+  readonly hue: "yellow" | "orange" | "red";
   readonly gravityCells: number;
   readonly lifetimeMs: number;
 };
@@ -786,11 +788,7 @@ function createDynamiteBlastEffect(
         // matches the body's diameter so sparks shed all across the
         // visible silhouette.
         originColumnOffset: (Math.random() - 0.5) * 1.4,
-        angleRad: lerp(
-          EMBER_ANGLE_MIN_RAD,
-          EMBER_ANGLE_MAX_RAD,
-          Math.random(),
-        ),
+        angleRad: lerp(EMBER_ANGLE_MIN_RAD, EMBER_ANGLE_MAX_RAD, Math.random()),
         speedCells: lerp(
           EMBER_SPEED_MIN_CELLS,
           EMBER_SPEED_MAX_CELLS,
@@ -893,8 +891,7 @@ function createDynamiteBlastEffect(
     return {
       delayMs: Math.random() * 40,
       initialAltitudeCells,
-      fallDurationMs:
-        initialAltitudeCells / fireballTerminalSpeedCellsPerMs,
+      fallDurationMs: initialAltitudeCells / fireballTerminalSpeedCellsPerMs,
       originColumnOffset: (Math.random() - 0.5) * 1.0,
       // Alternate sides so the splash fan is balanced rather than
       // randomly clumped on one side.
@@ -934,9 +931,9 @@ function createDynamiteBlastEffect(
       const lastAlive = Math.min(landingRow - 1, Math.floor(currentY) - 1);
       for (let r = 0; r <= lastAlive; r++) {
         const cell = prev.board[r]?.[column];
-        if (!cell || cell.kind === 'empty') continue;
+        if (!cell || cell.kind === "empty") continue;
         const sprite =
-          cell.kind === 'detonator'
+          cell.kind === "detonator"
             ? sprites.detonator
             : sprites.byTier[cell.tier];
         items.push({ sprite, col: column, row: r });
@@ -992,11 +989,11 @@ function createDynamiteBlastEffect(
   };
 }
 
-function pickEmberHue(): 'yellow' | 'orange' | 'red' {
+function pickEmberHue(): "yellow" | "orange" | "red" {
   const r = Math.random();
-  if (r < 0.35) return 'yellow';
-  if (r < 0.85) return 'orange';
-  return 'red';
+  if (r < 0.35) return "yellow";
+  if (r < 0.85) return "orange";
+  return "red";
 }
 
 function drawFireball(
@@ -1017,7 +1014,7 @@ function drawFireball(
       (elapsedMs / 1000) * Math.PI * 2 * FLAME_JITTER_FREQS_HZ[idx] + phase,
     ) * FLAME_JITTER_AMPLITUDE;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   // Wake (drawn first, behind the body): dim red-orange smear
   // trailing above the fireball.
   drawFireblob(
@@ -1025,7 +1022,7 @@ function drawFireball(
     cx,
     centerCy - FIREBALL_WAKE_OFFSET * cellSize,
     cellSize * FIREBALL_WAKE_RADIUS * (1 + jitterAt(0, 0.5)),
-    'wake',
+    "wake",
   );
   // Body: orange-yellow flame at the fireball's center.
   drawFireblob(
@@ -1033,7 +1030,7 @@ function drawFireball(
     cx,
     centerCy,
     cellSize * FIREBALL_BODY_RADIUS * (1 + jitterAt(1, 1.7)),
-    'body',
+    "body",
   );
   // Leading core: bright white-yellow at the active edge, slightly
   // ahead of center so the teardrop reads as moving downward.
@@ -1042,7 +1039,7 @@ function drawFireball(
     cx,
     centerCy + FIREBALL_LEADING_OFFSET * cellSize,
     cellSize * FIREBALL_LEADING_RADIUS * (1 + jitterAt(2, 3.4)),
-    'leading',
+    "leading",
   );
   ctx.restore();
 }
@@ -1052,24 +1049,24 @@ function drawFireblob(
   cx: number,
   cy: number,
   r: number,
-  kind: 'leading' | 'body' | 'wake',
+  kind: "leading" | "body" | "wake",
 ): void {
   if (r <= 0) return;
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  if (kind === 'leading') {
-    grad.addColorStop(0, 'rgba(255, 255, 245, 0.95)');
-    grad.addColorStop(0.3, 'rgba(255, 240, 150, 0.85)');
-    grad.addColorStop(0.7, 'rgba(255, 180, 50, 0.55)');
-    grad.addColorStop(1, 'rgba(255, 110, 20, 0)');
-  } else if (kind === 'body') {
-    grad.addColorStop(0, 'rgba(255, 230, 130, 0.85)');
-    grad.addColorStop(0.4, 'rgba(255, 180, 60, 0.65)');
-    grad.addColorStop(0.8, 'rgba(240, 110, 30, 0.4)');
-    grad.addColorStop(1, 'rgba(200, 70, 20, 0)');
+  if (kind === "leading") {
+    grad.addColorStop(0, "rgba(255, 255, 245, 0.95)");
+    grad.addColorStop(0.3, "rgba(255, 240, 150, 0.85)");
+    grad.addColorStop(0.7, "rgba(255, 180, 50, 0.55)");
+    grad.addColorStop(1, "rgba(255, 110, 20, 0)");
+  } else if (kind === "body") {
+    grad.addColorStop(0, "rgba(255, 230, 130, 0.85)");
+    grad.addColorStop(0.4, "rgba(255, 180, 60, 0.65)");
+    grad.addColorStop(0.8, "rgba(240, 110, 30, 0.4)");
+    grad.addColorStop(1, "rgba(200, 70, 20, 0)");
   } else {
-    grad.addColorStop(0, 'rgba(255, 150, 50, 0.55)');
-    grad.addColorStop(0.5, 'rgba(220, 90, 30, 0.4)');
-    grad.addColorStop(1, 'rgba(120, 50, 20, 0)');
+    grad.addColorStop(0, "rgba(255, 150, 50, 0.55)");
+    grad.addColorStop(0.5, "rgba(220, 90, 30, 0.4)");
+    grad.addColorStop(1, "rgba(120, 50, 20, 0)");
   }
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -1104,7 +1101,7 @@ function drawSmokeTrail(
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
     grad.addColorStop(0, `rgba(110, 95, 85, ${alpha})`);
     grad.addColorStop(0.6, `rgba(90, 78, 70, ${alpha * 0.6})`);
-    grad.addColorStop(1, 'rgba(60, 50, 45, 0)');
+    grad.addColorStop(1, "rgba(60, 50, 45, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -1122,7 +1119,7 @@ function drawEmbers(
   canvasHeight: number,
 ): void {
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const ember of embers) {
     const ageMs = blastElapsedMs - ember.birthMs;
     if (ageMs < 0 || ageMs >= ember.lifetimeMs) continue;
@@ -1149,7 +1146,7 @@ function drawEmber(
   cy: number,
   coreRadiusPx: number,
   alpha: number,
-  hue: 'yellow' | 'orange' | 'red',
+  hue: "yellow" | "orange" | "red",
 ): void {
   const haloR = coreRadiusPx * 2.6;
   const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);
@@ -1157,15 +1154,15 @@ function drawEmber(
   // so embers read as hot points wrapped in colored fire.
   let outer: string;
   let mid: string;
-  if (hue === 'yellow') {
-    outer = '255, 200, 60';
-    mid = '255, 230, 130';
-  } else if (hue === 'orange') {
-    outer = '255, 140, 30';
-    mid = '255, 180, 70';
+  if (hue === "yellow") {
+    outer = "255, 200, 60";
+    mid = "255, 230, 130";
+  } else if (hue === "orange") {
+    outer = "255, 140, 30";
+    mid = "255, 180, 70";
   } else {
-    outer = '230, 70, 20';
-    mid = '255, 120, 40';
+    outer = "230, 70, 20";
+    mid = "255, 120, 40";
   }
   halo.addColorStop(0, `rgba(255, 250, 220, ${alpha * 0.85})`);
   halo.addColorStop(0.4, `rgba(${mid}, ${alpha * 0.55})`);
@@ -1203,25 +1200,17 @@ function drawFloorBurst(
   // playfield rather than half-clipping below it.
   const cy = canvasHeight - 0.35 * cellSize;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   // Two stacked blobs with a small jitter: the same trick the running
   // flame uses, scaled up.
   for (let i = 0; i < 2; i++) {
     const jitter =
       Math.sin(
-        (elapsedMs / 1000) * Math.PI * 2 * FLAME_JITTER_FREQS_HZ[i] +
-          i * 1.7,
+        (elapsedMs / 1000) * Math.PI * 2 * FLAME_JITTER_FREQS_HZ[i] + i * 1.7,
       ) * FLAME_JITTER_AMPLITUDE;
     const blobR = r * (1 + jitter) * (i === 0 ? 1 : 0.7);
     const dx = i === 0 ? 0 : (i % 2 === 0 ? -0.12 : 0.12) * cellSize;
-    const grad = ctx.createRadialGradient(
-      cx + dx,
-      cy,
-      0,
-      cx + dx,
-      cy,
-      blobR,
-    );
+    const grad = ctx.createRadialGradient(cx + dx, cy, 0, cx + dx, cy, blobR);
     if (i === 0) {
       grad.addColorStop(0, `rgba(255, 255, 255, ${0.9 * fade})`);
       grad.addColorStop(0.3, `rgba(255, 230, 130, ${0.85 * fade})`);
@@ -1230,7 +1219,7 @@ function drawFloorBurst(
       grad.addColorStop(0.4, `rgba(255, 170, 50, ${0.6 * fade})`);
     }
     grad.addColorStop(0.8, `rgba(255, 120, 30, ${0.4 * fade})`);
-    grad.addColorStop(1, 'rgba(255, 80, 0, 0)');
+    grad.addColorStop(1, "rgba(255, 80, 0, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx + dx, cy, blobR, 0, Math.PI * 2);
@@ -1268,7 +1257,8 @@ function drawFloorSmoke(
       // Phase 1: falling. Puff descends from initial altitude at
       // the fireball's terminal speed; column position fixed.
       cx = baseCx;
-      const fallProgress = puff.fallDurationMs > 0 ? ageMs / puff.fallDurationMs : 1;
+      const fallProgress =
+        puff.fallDurationMs > 0 ? ageMs / puff.fallDurationMs : 1;
       altitudeCells = puff.initialAltitudeCells * (1 - fallProgress);
     } else {
       // Phase 2: splashed against the floor. Outward motion
@@ -1300,7 +1290,7 @@ function drawFloorSmoke(
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
     grad.addColorStop(0, `rgba(120, 100, 90, ${alpha})`);
     grad.addColorStop(0.6, `rgba(95, 80, 72, ${alpha * 0.6})`);
-    grad.addColorStop(1, 'rgba(60, 50, 45, 0)');
+    grad.addColorStop(1, "rgba(60, 50, 45, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -1411,18 +1401,68 @@ const FIREBALL_DISPERSE_EXPAND = 0.2;
 const CELL_WHITE_FLASH_MS = 80;
 const CELL_WHITE_FLASH_RADIUS_CELLS = 0.55;
 
-// Per-cell debris bursts: at the moment the fireball engulfs a
-// cell, this many embers fire from that cell's center, fanned
-// around the circle with jitter. Origin per cell (not per
-// detonator) so the bursts read as "this thing got blown up"
-// rather than radiating from one center.
-const DEBRIS_PER_CELL = 6;
-const DEBRIS_LIFETIME_MS = 400;
-const DEBRIS_SPEED_MIN_CELLS = 0.7;
-const DEBRIS_SPEED_MAX_CELLS = 1.5;
-const DEBRIS_GRAVITY_CELLS = 1.4;
-const DEBRIS_BASE_RADIUS_MIN_PX = 2.0;
-const DEBRIS_BASE_RADIUS_MAX_PX = 3.5;
+// Shrapnel: tumbling polygon chunks thrown by the blast. Each chunk
+// launches from a cleared cell's center, but its initial velocity
+// is directed *away from the owning detonator*, not radially from
+// its own cell — so the blast visibly throws everything outward
+// from the source. Polygons are tinted from each element's sampled
+// palette so a shattered tier-3 element scatters tier-3-colored
+// fragments. The detonator itself shatters too, contributing chunks
+// colored from its own palette in evenly-spread directions (since
+// source and cell coincide, there's no outward axis).
+//
+// Motion is real ballistic physics: initial velocity in cells/sec,
+// gravity pulling toward the floor, and elastic-but-damped bounces
+// off the playfield's left wall, right wall, and floor. Chunks fly
+// off the top of the canvas (no top bounce) and either come back
+// down under gravity or just fade out. Each chunk's trajectory is
+// pre-computed at construction time as a list of constant-velocity
+// (with gravity) segments separated by bounce events, so position
+// lookup at draw time is O(segments) — no per-frame integration,
+// and motion stays deterministic from elapsed time.
+const SHRAPNEL_PER_CELL = 9;
+const SHRAPNEL_DETONATOR_COUNT = 14;
+const SHRAPNEL_LIFETIME_MS = 1600;
+// Initial speed in cells per second. Wide range so a burst has a
+// mix of close-range chunks and ones that genuinely fly across
+// the board.
+const SHRAPNEL_SPEED_MIN_CPS = 9;
+const SHRAPNEL_SPEED_MAX_CPS = 16;
+// Gravity in cells per second squared, pulling toward row 0. Tuned
+// so chunks fired sideways from the upper rows visibly arc down
+// within their lifetime.
+const SHRAPNEL_GRAVITY_CPS2 = 16;
+// Velocity multiplier on the bounce-perpendicular component.
+// 0.5 = a chunk loses half its perpendicular speed each bounce, so
+// after 3 bounces it's at 1/8 — bouncing decays out naturally.
+const SHRAPNEL_BOUNCE_DAMPING = 0.5;
+// Velocity multiplier on the bounce-tangential component (friction
+// along the surface). Chunks scrub along the wall a little, but
+// don't slide forever.
+const SHRAPNEL_BOUNCE_FRICTION = 0.85;
+// Stop simulating once a chunk's speed drops below this. Avoids
+// an infinite-bounce loop on the floor as gravity reasserts.
+const SHRAPNEL_REST_SPEED_CPS = 0.5;
+// Hard cap on simulated bounces per chunk to bound construction
+// cost. With 0.5 damping, ~6–8 bounces is more than the eye reads.
+const SHRAPNEL_MAX_BOUNCES = 8;
+
+const SHRAPNEL_SIZE_MIN_PX = 7;
+const SHRAPNEL_SIZE_MAX_PX = 13;
+// Tumble speed, radians per ms. ~0.012 rad/ms ≈ 1.9 turns/sec.
+const SHRAPNEL_ROTATION_SPEED_MAX_RAD_PER_MS = 0.012;
+// Cone half-width around the radial direction. Chunks fan out
+// rather than firing in a perfect line away from the detonator,
+// so the burst reads as messy debris, not a directed beam.
+const SHRAPNEL_DIRECTION_JITTER_RAD = 0.5;
+
+// Playfield bounds in cell units, used as bounce surfaces for
+// shrapnel. Mirrors playfield.ts BOARD_WIDTH and the floor row;
+// kept here to avoid a renderer-internal dependency cycle. Update
+// both if the board size ever changes.
+const SHRAPNEL_BOUND_LEFT_COL = 0;
+const SHRAPNEL_BOUND_RIGHT_COL = 7;
+const SHRAPNEL_BOUND_FLOOR_ROW = 0;
 
 // Continuous fireball embers: shed throughout the bloom + sustain
 // phases from random points within the fireball's body. Mirrors
@@ -1474,7 +1514,7 @@ type DetEmber = {
   readonly angleRad: number;
   readonly speedCells: number;
   readonly baseRadiusPx: number;
-  readonly hue: 'yellow' | 'orange' | 'red';
+  readonly hue: "yellow" | "orange" | "red";
   readonly gravityCells: number;
   readonly lifetimeMs: number;
 };
@@ -1485,10 +1525,32 @@ type DetSmokeWisp = {
   readonly originRowCells: number;
 };
 
+type ShrapnelSegment = {
+  readonly tStartMs: number; // ms from chunk birth
+  readonly xStartCells: number;
+  readonly yStartCells: number; // row-units (row 0 = floor)
+  readonly vxCellsPerMs: number;
+  readonly vyCellsPerMs: number; // positive = upward
+};
+
+type Shrapnel = {
+  readonly birthMs: number;
+  readonly lifetimeMs: number;
+  readonly rotationStartRad: number;
+  readonly rotationSpeedRadPerMs: number;
+  readonly color: string;
+  readonly sizePx: number;
+  readonly polygon: readonly { readonly x: number; readonly y: number }[];
+  readonly gravityCellsPerMs2: number;
+  readonly segments: readonly ShrapnelSegment[];
+};
+
 function createDetonateEffect(
   detonators: readonly Pos[],
   cleared: readonly Pos[],
   startNow: number,
+  prevSnapshot: State,
+  sprites: SpriteAtlas,
 ): Effect {
   // The effect owns every cleared cell: each one renders its
   // original sprite until the fireball reaches it, then disappears.
@@ -1497,19 +1559,22 @@ function createDetonateEffect(
   const skipCells = new Set<string>();
   for (const cell of cleared) skipCells.add(cellKey(cell.row, cell.column));
 
-  // Engulfment time per cleared cell — when the fireball's outer
-  // edge sweeps past the cell's center. Tying this to the actual
-  // bloom curve (rather than a separate per-cell-distance constant)
-  // means each cell's sprite vanishes exactly as the visible flame
-  // arrives, with no stale frames where the sprite hangs around
-  // inside the fireball. The bloom curve is r(t) = (1 - (1-t/B)²)·R
-  // for B = FIREBALL_BLOOM_MS and R = FIREBALL_OUTER_RADIUS_CELLS;
-  // inverting gives t = B · (1 - √(1 - d/R)). With multi-detonator
-  // overlap, a cell is engulfed by whichever fireball reaches it
-  // first — i.e. the closest detonator wins.
+  // Engulfment time + owning-detonator per cleared cell. The
+  // engulf time is when the fireball's outer edge sweeps past the
+  // cell's center; tying it to the actual bloom curve (rather than
+  // a separate per-cell-distance constant) means each cell's
+  // sprite vanishes exactly as the visible flame arrives. The
+  // bloom curve is r(t) = (1 - (1-t/B)²)·R for B = FIREBALL_BLOOM_MS
+  // and R = FIREBALL_OUTER_RADIUS_CELLS; inverting gives
+  // t = B · (1 - √(1 - d/R)). With multi-detonator overlap, a cell
+  // is engulfed by whichever fireball reaches it first — i.e. the
+  // closest detonator wins. The owning-detonator is also the
+  // source point shrapnel is hurled away from.
   const engulfByKey = new Map<string, number>();
+  const sourceByKey = new Map<string, Pos>();
   for (const cell of cleared) {
     let earliest = Infinity;
+    let source: Pos = detonators[0];
     for (const det of detonators) {
       const dx = cell.column - det.column;
       const dy = cell.row - det.row;
@@ -1517,9 +1582,14 @@ function createDetonateEffect(
       const ratio = Math.min(1, distance / FIREBALL_OUTER_RADIUS_CELLS);
       const engulfMs =
         DETONATOR_PRESS_MS + FIREBALL_BLOOM_MS * (1 - Math.sqrt(1 - ratio));
-      if (engulfMs < earliest) earliest = engulfMs;
+      if (engulfMs < earliest) {
+        earliest = engulfMs;
+        source = det;
+      }
     }
-    engulfByKey.set(cellKey(cell.row, cell.column), earliest);
+    const key = cellKey(cell.row, cell.column);
+    engulfByKey.set(key, earliest);
+    sourceByKey.set(key, source);
   }
 
   const detonatorKeys = new Set<string>();
@@ -1527,38 +1597,58 @@ function createDetonateEffect(
     detonatorKeys.add(cellKey(det.row, det.column));
   }
 
-  // Per-cell debris bursts. Each cleared cell fires DEBRIS_PER_CELL
-  // embers from its own center at engulfment time, fanned around
-  // the circle with jitter so the burst doesn't grid up.
-  const debrisEmbers: DetEmber[] = [];
+  // Shrapnel: each cleared element shatters at fireball-engulfment
+  // time and throws polygon chunks outward from the owning
+  // detonator. Origin = cell center; velocity direction = away from
+  // the detonator + jitter, so the burst reads as "the blast threw
+  // these pieces away" rather than "this cell exploded inward".
+  // Detonators themselves emit chunks at the moment of detonation;
+  // direction is fully random because source and cell coincide.
+  const shrapnel: Shrapnel[] = [];
   for (const cell of cleared) {
-    const engulfMs = engulfByKey.get(cellKey(cell.row, cell.column));
-    if (engulfMs === undefined) continue;
-    const baseAngle = Math.random() * Math.PI * 2;
-    for (let i = 0; i < DEBRIS_PER_CELL; i++) {
+    const key = cellKey(cell.row, cell.column);
+    const isDetonator = detonatorKeys.has(key);
+    const palette = paletteForCell(cell, prevSnapshot, sprites);
+    if (isDetonator) {
+      // Source = cell, so radial direction is undefined. Spread
+      // chunks evenly around the circle for a balanced burst.
+      const baseAngle = Math.random() * Math.PI * 2;
+      for (let i = 0; i < SHRAPNEL_DETONATOR_COUNT; i++) {
+        const angle =
+          baseAngle +
+          (i * Math.PI * 2) / SHRAPNEL_DETONATOR_COUNT +
+          (Math.random() - 0.5) * 0.3;
+        shrapnel.push(
+          buildShrapnel(
+            DETONATOR_PRESS_MS,
+            cell.column + 0.5,
+            cell.row + 0.5,
+            angle,
+            palette,
+          ),
+        );
+      }
+      continue;
+    }
+    const engulfMs = engulfByKey.get(key);
+    const source = sourceByKey.get(key);
+    if (engulfMs === undefined || source === undefined) continue;
+    const radial = Math.atan2(
+      cell.row - source.row,
+      cell.column - source.column,
+    );
+    for (let i = 0; i < SHRAPNEL_PER_CELL; i++) {
       const angle =
-        baseAngle +
-        (i * Math.PI * 2) / DEBRIS_PER_CELL +
-        (Math.random() - 0.5) * 0.4;
-      debrisEmbers.push({
-        birthMs: engulfMs,
-        originColumnCells: cell.column + 0.5,
-        originRowCells: cell.row + 0.5,
-        angleRad: angle,
-        speedCells: lerp(
-          DEBRIS_SPEED_MIN_CELLS,
-          DEBRIS_SPEED_MAX_CELLS,
-          Math.random(),
+        radial + (Math.random() - 0.5) * 2 * SHRAPNEL_DIRECTION_JITTER_RAD;
+      shrapnel.push(
+        buildShrapnel(
+          engulfMs,
+          cell.column + 0.5,
+          cell.row + 0.5,
+          angle,
+          palette,
         ),
-        baseRadiusPx: lerp(
-          DEBRIS_BASE_RADIUS_MIN_PX,
-          DEBRIS_BASE_RADIUS_MAX_PX,
-          Math.random(),
-        ),
-        hue: pickEmberHue(),
-        gravityCells: DEBRIS_GRAVITY_CELLS,
-        lifetimeMs: DEBRIS_LIFETIME_MS,
-      });
+      );
     }
   }
 
@@ -1632,11 +1722,9 @@ function createDetonateEffect(
         const engulfMs = engulfByKey.get(cellKey(cell.row, cell.column));
         if (engulfMs === undefined || elapsedMs >= engulfMs) continue;
         const c = prev.board[cell.row]?.[cell.column];
-        if (!c || c.kind === 'empty') continue;
+        if (!c || c.kind === "empty") continue;
         const sprite =
-          c.kind === 'detonator'
-            ? sprites.detonator
-            : sprites.byTier[c.tier];
+          c.kind === "detonator" ? sprites.detonator : sprites.byTier[c.tier];
         items.push({ sprite, col: cell.column, row: cell.row });
       }
       return items;
@@ -1675,8 +1763,8 @@ function createDetonateEffect(
       // Phase 2: detonation. Layers are drawn back-to-front:
       // per-cell white flashes (sit on the destroyed cells), then
       // the fireball (warm body of the explosion), the detonation
-      // flash punctuating the bang, embers (debris + continuous),
-      // then the shockwave ring on top as the leading edge.
+      // flash punctuating the bang, fireball embers, shrapnel
+      // chunks, then the shockwave ring on top as the leading edge.
       const sinceDetonationMs = elapsedMs - DETONATOR_PRESS_MS;
       drawCellFlashes(
         ctx,
@@ -1700,21 +1788,9 @@ function createDetonateEffect(
         cellSize,
         canvasHeight,
       );
-      drawDetEmbers(ctx, debrisEmbers, elapsedMs, cellSize, canvasHeight);
-      drawDetEmbers(
-        ctx,
-        fireballEmbers,
-        elapsedMs,
-        cellSize,
-        canvasHeight,
-      );
-      drawShockwave(
-        ctx,
-        detonators,
-        sinceDetonationMs,
-        cellSize,
-        canvasHeight,
-      );
+      drawDetEmbers(ctx, fireballEmbers, elapsedMs, cellSize, canvasHeight);
+      drawShrapnel(ctx, shrapnel, elapsedMs, cellSize, canvasHeight);
+      drawShockwave(ctx, detonators, sinceDetonationMs, cellSize, canvasHeight);
     },
   };
 }
@@ -1802,14 +1878,14 @@ function drawPressGlow(
   if (alpha <= 0) return;
   const radius = cellSize * PRESS_GLOW_RADIUS_CELLS * (0.7 + 0.3 * pressT);
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const det of detonators) {
     const cx = (det.column + 0.5) * cellSize;
     const cy = canvasHeight - (det.row + 0.5) * cellSize;
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
     grad.addColorStop(0, `rgba(255, 240, 180, ${alpha})`);
     grad.addColorStop(0.5, `rgba(255, 200, 90, ${alpha * 0.65})`);
-    grad.addColorStop(1, 'rgba(255, 150, 40, 0)');
+    grad.addColorStop(1, "rgba(255, 150, 40, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -1837,7 +1913,7 @@ function drawDetonationFlash(
     alpha = (1 - decayT) * (1 - decayT);
   }
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const det of detonators) {
     const cx = (det.column + 0.5) * cellSize;
     const cy = canvasHeight - (det.row + 0.5) * cellSize;
@@ -1845,7 +1921,7 @@ function drawDetonationFlash(
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     grad.addColorStop(0, `rgba(255, 255, 250, ${alpha})`);
     grad.addColorStop(0.4, `rgba(255, 245, 180, ${alpha * 0.7})`);
-    grad.addColorStop(1, 'rgba(255, 220, 100, 0)');
+    grad.addColorStop(1, "rgba(255, 220, 100, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -1875,8 +1951,7 @@ function drawDetFireball(
     scale = 1 - (1 - t) * (1 - t);
     alpha = t;
   } else {
-    const t =
-      (sinceDetonationMs - FIREBALL_BLOOM_MS) / FIREBALL_DISPERSE_MS;
+    const t = (sinceDetonationMs - FIREBALL_BLOOM_MS) / FIREBALL_DISPERSE_MS;
     const expandU = 1 - (1 - t) * (1 - t);
     scale = 1 + FIREBALL_DISPERSE_EXPAND * expandU;
     alpha = (1 - t) * (1 - t);
@@ -1891,7 +1966,7 @@ function drawDetFireball(
         phase,
     ) * FLAME_JITTER_AMPLITUDE;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const det of detonators) {
     const cx = (det.column + 0.5) * cellSize;
     const cy = canvasHeight - (det.row + 0.5) * cellSize;
@@ -1899,34 +1974,25 @@ function drawDetFireball(
       ctx,
       cx,
       cy,
-      cellSize *
-        FIREBALL_OUTER_RADIUS_CELLS *
-        scale *
-        (1 + jitterAt(0, 0.5)),
+      cellSize * FIREBALL_OUTER_RADIUS_CELLS * scale * (1 + jitterAt(0, 0.5)),
       alpha,
-      'wake',
+      "wake",
     );
     drawDetFireblob(
       ctx,
       cx,
       cy,
-      cellSize *
-        FIREBALL_BODY_RADIUS_CELLS *
-        scale *
-        (1 + jitterAt(1, 1.7)),
+      cellSize * FIREBALL_BODY_RADIUS_CELLS * scale * (1 + jitterAt(1, 1.7)),
       alpha,
-      'body',
+      "body",
     );
     drawDetFireblob(
       ctx,
       cx,
       cy,
-      cellSize *
-        FIREBALL_INNER_RADIUS_CELLS *
-        scale *
-        (1 + jitterAt(2, 3.4)),
+      cellSize * FIREBALL_INNER_RADIUS_CELLS * scale * (1 + jitterAt(2, 3.4)),
       alpha,
-      'leading',
+      "leading",
     );
   }
   ctx.restore();
@@ -1938,24 +2004,24 @@ function drawDetFireblob(
   cy: number,
   r: number,
   alpha: number,
-  kind: 'leading' | 'body' | 'wake',
+  kind: "leading" | "body" | "wake",
 ): void {
   if (r <= 0) return;
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  if (kind === 'leading') {
+  if (kind === "leading") {
     grad.addColorStop(0, `rgba(255, 255, 245, ${0.95 * alpha})`);
     grad.addColorStop(0.3, `rgba(255, 240, 150, ${0.85 * alpha})`);
     grad.addColorStop(0.7, `rgba(255, 180, 50, ${0.55 * alpha})`);
-    grad.addColorStop(1, 'rgba(255, 110, 20, 0)');
-  } else if (kind === 'body') {
+    grad.addColorStop(1, "rgba(255, 110, 20, 0)");
+  } else if (kind === "body") {
     grad.addColorStop(0, `rgba(255, 230, 130, ${0.85 * alpha})`);
     grad.addColorStop(0.4, `rgba(255, 180, 60, ${0.65 * alpha})`);
     grad.addColorStop(0.8, `rgba(240, 110, 30, ${0.4 * alpha})`);
-    grad.addColorStop(1, 'rgba(200, 70, 20, 0)');
+    grad.addColorStop(1, "rgba(200, 70, 20, 0)");
   } else {
     grad.addColorStop(0, `rgba(255, 150, 50, ${0.55 * alpha})`);
     grad.addColorStop(0.5, `rgba(220, 90, 30, ${0.4 * alpha})`);
-    grad.addColorStop(1, 'rgba(120, 50, 20, 0)');
+    grad.addColorStop(1, "rgba(120, 50, 20, 0)");
   }
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -1972,7 +2038,7 @@ function drawCellFlashes(
   canvasHeight: number,
 ): void {
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const cell of cleared) {
     const arrivalMs = arrivalByKey.get(cellKey(cell.row, cell.column));
     if (arrivalMs === undefined) continue;
@@ -1986,11 +2052,254 @@ function drawCellFlashes(
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
     grad.addColorStop(0.7, `rgba(255, 250, 230, ${alpha * 0.5})`);
-    grad.addColorStop(1, 'rgba(255, 240, 200, 0)');
+    grad.addColorStop(1, "rgba(255, 240, 200, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.restore();
+}
+
+function paletteForCell(
+  cell: Pos,
+  prevSnapshot: State,
+  sprites: SpriteAtlas,
+): readonly string[] {
+  const c = prevSnapshot.board[cell.row]?.[cell.column];
+  if (!c || c.kind === "empty") return sprites.detonator.palette;
+  return c.kind === "detonator"
+    ? sprites.detonator.palette
+    : sprites.byTier[c.tier].palette;
+}
+
+function buildShrapnel(
+  birthMs: number,
+  originColumnCells: number,
+  originRowCells: number,
+  angleRad: number,
+  palette: readonly string[],
+): Shrapnel {
+  const color =
+    palette.length === 0
+      ? "rgb(180, 130, 80)"
+      : palette[Math.floor(Math.random() * palette.length)];
+  // Convert from cells/sec to cells/ms once. Velocity vy is positive
+  // upward; angleRad already follows that convention (cos for x,
+  // sin for y, with sin>0 meaning upward in the renderer's
+  // row-up coordinate system).
+  const speedCellsPerMs =
+    lerp(SHRAPNEL_SPEED_MIN_CPS, SHRAPNEL_SPEED_MAX_CPS, Math.random()) / 1000;
+  const vx = Math.cos(angleRad) * speedCellsPerMs;
+  const vy = Math.sin(angleRad) * speedCellsPerMs;
+  // Gravity in cells/ms². The 0.5*g*t² formula in `simulateSegments`
+  // and `shrapnelPositionAtAge` needs gravity in the same time unit
+  // as t (ms), so divide by 1000 twice.
+  const gravityCellsPerMs2 = SHRAPNEL_GRAVITY_CPS2 / (1000 * 1000);
+  return {
+    birthMs,
+    lifetimeMs: SHRAPNEL_LIFETIME_MS,
+    rotationStartRad: Math.random() * Math.PI * 2,
+    rotationSpeedRadPerMs:
+      (Math.random() - 0.5) * 2 * SHRAPNEL_ROTATION_SPEED_MAX_RAD_PER_MS,
+    color,
+    sizePx: lerp(SHRAPNEL_SIZE_MIN_PX, SHRAPNEL_SIZE_MAX_PX, Math.random()),
+    polygon: randomPolygon(),
+    gravityCellsPerMs2,
+    segments: simulateShrapnelSegments(
+      originColumnCells,
+      originRowCells,
+      vx,
+      vy,
+      gravityCellsPerMs2,
+      SHRAPNEL_LIFETIME_MS,
+    ),
+  };
+}
+
+// Walk the chunk's trajectory at construction time. Each iteration
+// finds the next collision (left wall, right wall, or floor) within
+// the remaining lifetime. If nothing collides, we're done — the
+// chunk fades out where it is. Otherwise we record the post-collision
+// state as a new segment with reflected velocity (perpendicular
+// component damped, tangential component scaled by friction) and
+// keep going. Top of canvas is intentionally not a bounce surface;
+// chunks fired upward fly off and either come back down under
+// gravity or fade out off-screen.
+function simulateShrapnelSegments(
+  x0: number,
+  y0: number,
+  vx0: number,
+  vy0: number,
+  gravity: number,
+  lifetimeMs: number,
+): readonly ShrapnelSegment[] {
+  const segments: ShrapnelSegment[] = [];
+  let t = 0;
+  let x = x0;
+  let y = y0;
+  let vx = vx0;
+  let vy = vy0;
+  for (let i = 0; i <= SHRAPNEL_MAX_BOUNCES; i++) {
+    segments.push({
+      tStartMs: t,
+      xStartCells: x,
+      yStartCells: y,
+      vxCellsPerMs: vx,
+      vyCellsPerMs: vy,
+    });
+    const remaining = lifetimeMs - t;
+    if (remaining <= 0) break;
+    let dt = remaining;
+    let collision: "none" | "left" | "right" | "floor" = "none";
+    // Wall collisions: x has no acceleration, so a linear solve.
+    // The 0.001 ms tolerance avoids the just-bounced segment
+    // immediately re-colliding with the same surface.
+    if (vx < 0) {
+      const tWall = (SHRAPNEL_BOUND_LEFT_COL - x) / vx;
+      if (tWall > 0.001 && tWall < dt) {
+        dt = tWall;
+        collision = "left";
+      }
+    } else if (vx > 0) {
+      const tWall = (SHRAPNEL_BOUND_RIGHT_COL - x) / vx;
+      if (tWall > 0.001 && tWall < dt) {
+        dt = tWall;
+        collision = "right";
+      }
+    }
+    // Floor collision: y(τ) = y + vy·τ - ½·g·τ². Solving for
+    // y = floorRow gives the quadratic ½·g·τ² - vy·τ + (floor - y) = 0.
+    // Take the smallest positive root above the tolerance.
+    if (gravity > 0) {
+      const a = 0.5 * gravity;
+      const b = -vy;
+      const c = y - SHRAPNEL_BOUND_FLOOR_ROW;
+      const disc = b * b - 4 * a * c;
+      if (disc >= 0) {
+        const sqrtDisc = Math.sqrt(disc);
+        const t1 = (-b - sqrtDisc) / (2 * a);
+        const t2 = (-b + sqrtDisc) / (2 * a);
+        const tFloor = t1 > 0.001 ? t1 : t2 > 0.001 ? t2 : -1;
+        if (tFloor > 0 && tFloor < dt) {
+          dt = tFloor;
+          collision = "floor";
+        }
+      }
+    }
+    if (collision === "none") break;
+    // Advance position and velocity to the collision point.
+    const newX = x + vx * dt;
+    const newY = y + vy * dt - 0.5 * gravity * dt * dt;
+    let newVx = vx;
+    let newVy = vy - gravity * dt;
+    // Reflect: perpendicular component flips and is damped, the
+    // tangential component is just scaled by friction. Math.abs
+    // forces the post-bounce velocity direction in case numerical
+    // drift left it on the wrong side of zero.
+    if (collision === "left") {
+      newVx = Math.abs(newVx) * SHRAPNEL_BOUNCE_DAMPING;
+      newVy *= SHRAPNEL_BOUNCE_FRICTION;
+    } else if (collision === "right") {
+      newVx = -Math.abs(newVx) * SHRAPNEL_BOUNCE_DAMPING;
+      newVy *= SHRAPNEL_BOUNCE_FRICTION;
+    } else {
+      newVy = Math.abs(newVy) * SHRAPNEL_BOUNCE_DAMPING;
+      newVx *= SHRAPNEL_BOUNCE_FRICTION;
+    }
+    t += dt;
+    x = newX;
+    y = newY;
+    vx = newVx;
+    vy = newVy;
+    // Settle: once the chunk is moving slowly enough, further
+    // bounces are imperceptible and just compound numerical noise.
+    const restThreshold = SHRAPNEL_REST_SPEED_CPS / 1000;
+    if (vx * vx + vy * vy < restThreshold * restThreshold) break;
+  }
+  return segments;
+}
+
+function shrapnelPositionAtAge(
+  s: Shrapnel,
+  ageMs: number,
+): { x: number; y: number } {
+  // Segments are sorted by tStartMs; pick the latest one whose
+  // start is <= ageMs. Linear scan is fine — chunks have at most
+  // SHRAPNEL_MAX_BOUNCES + 1 segments.
+  let seg = s.segments[0];
+  for (let i = 1; i < s.segments.length; i++) {
+    if (s.segments[i].tStartMs > ageMs) break;
+    seg = s.segments[i];
+  }
+  const dt = ageMs - seg.tStartMs;
+  return {
+    x: seg.xStartCells + seg.vxCellsPerMs * dt,
+    y:
+      seg.yStartCells +
+      seg.vyCellsPerMs * dt -
+      0.5 * s.gravityCellsPerMs2 * dt * dt,
+  };
+}
+
+// Irregular convex-ish polygon, ~3–5 vertices, with each vertex
+// jittered around a unit circle. Coordinates are in shrapnel-local
+// units (multiplied by sizePx at draw time).
+function randomPolygon(): readonly { x: number; y: number }[] {
+  const n = 3 + Math.floor(Math.random() * 3);
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+    const r = 0.6 + Math.random() * 0.4;
+    points.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+  }
+  return points;
+}
+
+function drawShrapnel(
+  ctx: CanvasRenderingContext2D,
+  chunks: readonly Shrapnel[],
+  blastElapsedMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  // Default composite (not 'lighter') so chunks read as solid
+  // colored matter against the fireball glow, not as more flame.
+  ctx.save();
+  for (const chunk of chunks) {
+    const ageMs = blastElapsedMs - chunk.birthMs;
+    if (ageMs < 0 || ageMs >= chunk.lifetimeMs) continue;
+    const pos = shrapnelPositionAtAge(chunk, ageMs);
+    const screenX = pos.x * cellSize;
+    const screenY = canvasHeight - pos.y * cellSize;
+    // Quadratic alpha decay weighted toward the second half so
+    // chunks linger as physical pieces, then vaporize at the end.
+    const t = ageMs / chunk.lifetimeMs;
+    const fadeT = t < 0.6 ? 0 : (t - 0.6) / 0.4;
+    const alpha = 1 - fadeT * fadeT;
+    if (alpha <= 0) continue;
+    const rotation =
+      chunk.rotationStartRad + ageMs * chunk.rotationSpeedRadPerMs;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(screenX, screenY);
+    ctx.rotate(rotation);
+    ctx.beginPath();
+    const p0 = chunk.polygon[0];
+    ctx.moveTo(p0.x * chunk.sizePx, p0.y * chunk.sizePx);
+    for (let i = 1; i < chunk.polygon.length; i++) {
+      const p = chunk.polygon[i];
+      ctx.lineTo(p.x * chunk.sizePx, p.y * chunk.sizePx);
+    }
+    ctx.closePath();
+    ctx.fillStyle = chunk.color;
+    ctx.fill();
+    // Thin dark stroke gives the chunk a defined silhouette
+    // against the bright fireball behind it.
+    ctx.strokeStyle = "rgba(35, 22, 12, 0.65)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -2003,7 +2312,7 @@ function drawDetEmbers(
   canvasHeight: number,
 ): void {
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const ember of embers) {
     const ageMs = blastElapsedMs - ember.birthMs;
     if (ageMs < 0 || ageMs >= ember.lifetimeMs) continue;
@@ -2051,7 +2360,7 @@ function drawDetSmoke(
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
     grad.addColorStop(0, `rgba(110, 95, 85, ${alpha})`);
     grad.addColorStop(0.6, `rgba(90, 78, 70, ${alpha * 0.6})`);
-    grad.addColorStop(1, 'rgba(60, 50, 45, 0)');
+    grad.addColorStop(1, "rgba(60, 50, 45, 0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -2080,13 +2389,12 @@ function drawShockwave(
   if (sinceDetonationMs < cornerArrivalMs) {
     alpha = 1;
   } else {
-    const trailT =
-      (sinceDetonationMs - cornerArrivalMs) / SHOCKWAVE_TRAIL_MS;
+    const trailT = (sinceDetonationMs - cornerArrivalMs) / SHOCKWAVE_TRAIL_MS;
     alpha = (1 - trailT) * (1 - trailT);
   }
   if (alpha <= 0) return;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = "lighter";
   for (const det of detonators) {
     const cx = (det.column + 0.5) * cellSize;
     const cy = canvasHeight - (det.row + 0.5) * cellSize;
@@ -2111,10 +2419,10 @@ function drawShockwaveRing(
   // (transparent), peak hot color in the middle, pale-blue tint at
   // the leading edge fading to fully transparent at outerR.
   const grad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
-  grad.addColorStop(0, 'rgba(255, 250, 220, 0)');
+  grad.addColorStop(0, "rgba(255, 250, 220, 0)");
   grad.addColorStop(0.4, `rgba(255, 250, 220, ${alpha * 0.85})`);
   grad.addColorStop(0.7, `rgba(220, 240, 255, ${alpha * 0.65})`);
-  grad.addColorStop(1, 'rgba(180, 220, 255, 0)');
+  grad.addColorStop(1, "rgba(180, 220, 255, 0)");
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
@@ -2147,9 +2455,9 @@ function createGravityEffect(
       const items: RenderItem[] = [];
       for (const m of movements) {
         const cell = prev.board[m.from.row]?.[m.from.column];
-        if (!cell || cell.kind === 'empty') continue;
+        if (!cell || cell.kind === "empty") continue;
         const sprite =
-          cell.kind === 'detonator'
+          cell.kind === "detonator"
             ? sprites.detonator
             : sprites.byTier[cell.tier];
         const ownDistance = m.from.row - m.to.row;
@@ -2195,4 +2503,3 @@ function easeOutIn(t: number): number {
   }
   return biphasic * 0.7 + t * 0.3;
 }
-

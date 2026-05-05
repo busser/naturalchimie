@@ -24,7 +24,7 @@ hand-drawn charm did not depend on flashy effects.
 | Gravity fall (per cell of distance) | 50 ms |
 | Dynamite explosion travel (per cell) | 60 ms |
 | Detonator plunger press | 200 ms |
-| Detonator detonation effects | 900 ms |
+| Detonator detonation effects | 1700 ms |
 | Preview slide-out / slide-in | 200 ms each, with ~80 ms gap |
 | Game-over fade | 600 ms |
 
@@ -282,19 +282,36 @@ several overlapping layers:
   keep growing during the fade is what sells "the explosion is
   thinning into the air" rather than "a glow is pulsing in
   place".
-- **Per-cell engulfment + debris burst** — each cleared cell's
+- **Per-cell engulfment + shrapnel** — each cleared cell's
   element sprite stays rendered until the fireball's outer edge
   sweeps past the cell's center, then vanishes. Engulfment is
   tied to the actual bloom curve (not a separate per-cell rate),
   so the sprite's disappearance lines up exactly with the
   visible flame arrival: edge cells engulfed at ~50 ms post-
-  detonation, corners at ~80 ms. At engulfment, the cell also
-  emits a small radial burst of debris embers (~6 per cell)
-  from its own center, in evenly-spread directions with random
-  gravity sag and ~400 ms lifetime. Per-cell origins (rather
-  than all from the detonator's center) sell "this thing got
-  blown up" rather than "everything got pulled toward the
-  middle".
+  detonation, corners at ~80 ms. At engulfment, the element
+  shatters: a generous handful of tumbling polygon chunks
+  (~9 per cell) launch from the cell's center, *propelled
+  outward from the owning detonator*, not radially from their
+  own cell. Origins at the cell, velocities away from the
+  source — so the burst reads as "the blast threw these pieces
+  away" rather than "this cell exploded inward". Each chunk is
+  tinted from the element's sampled palette (top dominant body
+  colors picked from the sprite at load time) so a shattered
+  tier-3 element scatters tier-3-colored fragments. Polygons
+  have 3–5 jittered vertices and tumble as they fly. Motion is
+  real ballistic physics: initial speeds in the 9–16 cells/sec
+  range, gravity pulling toward the floor, and damped bounces
+  off the playfield's left wall, right wall, and floor (chunks
+  fly off the top freely). Bounces lose half their perpendicular
+  velocity and a bit of tangential velocity to friction, so a
+  chunk flung sideways across the board can ricochet two or
+  three times before settling. Lifetime ~1600 ms, fading out in
+  the final ~640 ms — long enough that settled chunks visibly
+  rest on the floor for a moment before evaporating. The
+  detonator itself shatters too at the
+  moment of detonation, contributing chunks colored from its
+  own palette in evenly-spread directions (since source and
+  cell coincide, there's no outward axis).
 - **Continuous fireball embers** — additional embers shed
   continuously from random points within the fireball's body
   during the bloom + sustain phases. Outward velocities with
@@ -311,8 +328,10 @@ The detonator itself is engulfed at distance 0 (immediately at
 detonation). It is destroyed alongside everything else in the
 3×3 area.
 
-Total duration: ~1100 ms (200 ms plunger press + 900 ms
-detonation effects).
+Total duration: ~1900 ms (200 ms plunger press + 1700 ms
+detonation effects, the long tail of which covers shrapnel
+that's still bouncing and resting on the floor after the
+fireball is gone).
 
 The trigger-then-flash sequence has special cases:
 

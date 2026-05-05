@@ -77,7 +77,14 @@ export const FIREBALL_TIME_SCALE = 3;
 // register the wind-up: a too-short press lets the detonation feel
 // arbitrary rather than earned.
 export const DETONATOR_PRESS_MS = 200;
-export const DETONATOR_EFFECTS_MS = 900;
+// ~900 ms is the lifetime of the explosion proper (flash +
+// shockwave + fireball bloom and dispersion + smoke). The rest
+// covers the long tail of bouncing shrapnel chunks — pieces that
+// hit the floor and slide for a while before fading out. Sized
+// to fit SHRAPNEL_LIFETIME_MS plus the worst-case engulf delay
+// (corner cells, ~80 ms after detonation), so chunks born late
+// still have time to fully fade before the step commits.
+export const DETONATOR_EFFECTS_MS = 1700;
 export const DETONATOR_SHOCKWAVE_MS_PER_CELL = 50;
 
 // Time the fireball spends descending from landingRow to the floor.

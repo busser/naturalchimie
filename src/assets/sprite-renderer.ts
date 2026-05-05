@@ -12,6 +12,14 @@ export interface SpriteAsset {
   /** optional [x, y] in source pixels for particle emission (dynamite fuse) */
   fuse_tip?: [number, number];
   image: HTMLImageElement;
+  /**
+   * Up to 3 dominant body colors sampled from the image at load time,
+   * used to tint visual effects driven by the sprite (e.g. shrapnel
+   * thrown by the detonator's blast). Near-transparent, near-white,
+   * and near-black pixels are filtered so outlines and highlights
+   * don't dominate. Sorted by frequency, most common first.
+   */
+  palette: readonly string[];
 }
 
 /**
