@@ -3,6 +3,85 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-06 — Revamped the detonator's animation
+
+The detonator's animation worked end-to-end after yesterday's pass
+but felt weak next to the dynamite. The dynamite has visceral
+weight because it's a moving force — a fireball travels down a
+column, and the eye tracks it from descent to impact. The
+detonator is the opposite: stationary, bang at one point, all
+over in 1 s. Symmetric radial bloom around a single center reads
+as a glowing pulse, not violence.
+
+Diagnosed the problem as "moving force vs. stationary force",
+and built four interventions to make the detonator feel like a
+stationary force shoving the world outward.
+
+**Screen kick.** A whole-canvas translation at the moment of
+detonation — two mismatched high-frequency sines per axis with
+linear amplitude decay over ~180 ms. The dynamite gets its
+weight for free from descent motion; the detonator needs the
+kick to land the bang as a physical jolt rather than a glow on
+a still field.
+
+**Extended anticipation.** Press extended from 100 ms to 200 ms
+with two new layers built on top of the existing y-squash: a
+translation jitter on the squashed sprite (rumble that builds
+across the press, peaking at the bounce) and a warm yellow-
+orange glow under the cell (cubic alpha ramp, light leaking
+from the seams). The 100 ms was barely registering as wind-up;
+200 ms with these layers reads as compressed energy.
+
+**Shrapnel.** The big visual change. Replaced the per-cell
+debris embers with tumbling polygon chunks launched from each
+cleared cell, propelled outward from the *owning detonator*,
+not radially from their own cell. Original per-cell origins
+read as "many small things broke"; the new origin reads as
+"one big force threw everything". Chunks are tinted from each
+element's dominant body colors, sampled from sprite pixels at
+load time (4-bit-per-channel quantization, near-black and near-
+white pixels filtered out so outlines and highlights don't
+dominate). No per-element metadata authoring needed — the
+palette tracks whatever the artist drew.
+
+The first cut had chunks moving on the existing parametric
+"travel + sag" curve, which capped how far they could fly. On
+playtest that read as slightly bigger sparks rather than
+matter being hurled. Switched to real ballistic physics:
+initial velocities in the 9–16 cells/sec range, gravity
+pulling toward the floor, and damped bounces off the left
+wall, right wall, and floor (top is intentionally not a bounce
+surface, so chunks fired upward fly off-screen and either fall
+back or fade out). Each chunk's trajectory is pre-computed at
+construction time as a piecewise list of constant-velocity-
+with-gravity segments separated by bounce events. Position
+lookup at draw time is O(segments), so motion stays
+deterministic from elapsed time even with frame stutters —
+matching the rest of the renderer's particles. Tuned by feel
+to chunk count 9 per cell, lifetime 1600 ms, size 7–13 px:
+chunks really fly across the board, ricochet two or three
+times, and rest visibly on the floor for a beat before
+fading.
+
+**Scar overlay.** A darkened patch on each cleared cell that
+ramped up as the fireball dispersed and faded over ~500 ms.
+Read as 9 tiny scars rather than one large crater — polka dots,
+not a footprint. Removed it. Lasting impact from shrapnel
+chunks settling on the playfield carries the weight by itself.
+
+A few lessons surfaced. Per-cell scars don't aggregate — visual
+elements that each occupy one cell read as discrete dots, not a
+single shape, regardless of intent. Symmetric radial bloom
+alone reads as a glowing pulse; introducing asymmetric matter
+(shrapnel directed away from a single source) was what made
+the explosion feel violent. Sampling sprite palettes at load
+time gave element-correct chunk colors for free, and is
+probably worth keeping in mind for any future effect that
+wants to inherit a sprite's identity.
+
+Total step duration grew from ~1000 ms to ~1900 ms, mostly
+shrapnel tail (chunks settling on the floor before evaporating).
+
 ## 2026-05-04 — Animated the detonator detonation
 
 The `detonate` step landed in the core earlier today with a 0 ms
