@@ -91,6 +91,14 @@ export function createRenderer(deps: RendererDeps): Renderer {
         effectStep = inflight.step;
       }
       ctx.clearRect(0, 0, cssWidth, cssHeight);
+      // Apply the effect's canvas-wide shake (e.g., detonator kick)
+      // around everything that gets drawn this frame: lose-threshold
+      // line, sprites, effect overlays, fuse. clearRect runs before
+      // the translate so the cleared region tracks the canvas, not
+      // the shifted scene.
+      const shake = effect?.getCanvasShake?.(now) ?? null;
+      ctx.save();
+      if (shake !== null) ctx.translate(shake.x, shake.y);
       drawLoseThreshold(ctx, cellSize, cssWidth, cssHeight);
       // Collect board cells, active halves, and effect-owned sprites
       // (falling cells, shining originals, post-pop new tier) into
@@ -139,6 +147,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
           ? render.positions[0]
           : null;
       fuse.update(now, fuseCell, sprites, ctx, cellSize, cssHeight);
+      ctx.restore();
     },
   };
 }

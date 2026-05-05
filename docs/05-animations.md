@@ -239,6 +239,13 @@ When something is dropped directly onto a detonator:
 The detonation itself plays out over ~900 ms post-detonation, in
 several overlapping layers:
 
+- **Screen kick** — at the moment of detonation, the entire
+  playfield translates by a small fast-decaying offset
+  (amplitude ~6 px peak, two mismatched high-frequency sines
+  per axis, linear amplitude decay over ~180 ms). The dynamite
+  gets its visceral weight from the fireball's downward motion;
+  the detonator is stationary, so the kick is what carries that
+  weight here.
 - **Detonation flash** — a brief, intense white-yellow bloom at
   the detonator's cell at the moment of detonation. Peaks
   ~35 ms in, decays by ~130 ms. Punctuates the bang before the

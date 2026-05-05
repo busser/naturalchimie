@@ -153,6 +153,11 @@ export type Effect = {
     cellSize: number,
     canvasHeight: number,
   ): void;
+  // Optional canvas-wide translation, in CSS pixels, applied around
+  // the playfield render pass. The detonator uses this for the
+  // screen kick at the moment of detonation; other effects don't
+  // need it.
+  getCanvasShake?(now: number): { readonly x: number; readonly y: number };
 };
 
 export function createEffect(step: Step, startNow: number): Effect | null {
@@ -1432,6 +1437,19 @@ const DET_SMOKE_ORIGIN_RADIUS_CELLS = 1.2;
 const SHOCKWAVE_TRAIL_MS = 60;
 const SHOCKWAVE_HALF_THICKNESS_CELLS = 0.16;
 
+// Screen kick at the moment of detonation. The whole playfield
+// translates by a small, fast-decaying offset so the eye registers
+// the bang as a physical jolt rather than a glow on a still field.
+// The dynamite gets its visceral weight from the fireball's downward
+// motion; the detonator is stationary, so the shake is what carries
+// that weight here. Two mismatched sine frequencies per axis avoid
+// a recognizable pattern, and amplitude decays linearly over the
+// shake's life so the kick feels like a bang, not a rumble.
+const SHAKE_DURATION_MS = 180;
+const SHAKE_AMPLITUDE_PX = 6;
+const SHAKE_FREQ_X_HZ = 28;
+const SHAKE_FREQ_Y_HZ = 33;
+
 type DetEmber = {
   readonly birthMs: number;
   readonly originColumnCells: number;
@@ -1582,6 +1600,10 @@ function createDetonateEffect(
 
   return {
     skipCells,
+    getCanvasShake(now: number) {
+      const sinceDetonationMs = now - startNow - DETONATOR_PRESS_MS;
+      return shakeOffset(sinceDetonationMs);
+    },
     getSpriteItems(now, prev, sprites) {
       const elapsedMs = now - startNow;
       const items: RenderItem[] = [];
@@ -1685,6 +1707,22 @@ function squashCurve(t: number): number {
   }
   const k = (t - SQUASH_BOUNCE_START_T) / (1 - SQUASH_BOUNCE_START_T);
   return lerp(SQUASH_MIN, SQUASH_BOUNCE, k);
+}
+
+function shakeOffset(sinceDetonationMs: number): {
+  readonly x: number;
+  readonly y: number;
+} {
+  if (sinceDetonationMs < 0 || sinceDetonationMs >= SHAKE_DURATION_MS) {
+    return { x: 0, y: 0 };
+  }
+  const t = sinceDetonationMs / SHAKE_DURATION_MS;
+  const amp = SHAKE_AMPLITUDE_PX * (1 - t);
+  const phase = (sinceDetonationMs / 1000) * Math.PI * 2;
+  return {
+    x: amp * Math.sin(phase * SHAKE_FREQ_X_HZ),
+    y: amp * Math.sin(phase * SHAKE_FREQ_Y_HZ + 1.0),
+  };
 }
 
 function drawSquashedDetonator(
