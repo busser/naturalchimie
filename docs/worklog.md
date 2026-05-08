@@ -3,6 +3,39 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Hosted the game on GitHub Pages
+
+The original Flash game is unplayable now that browsers have dropped
+Flash, and this clone was only reachable by checking out the repo and
+running `vite dev`. GitHub Pages was the cheapest path to a real URL:
+the code already lives on GitHub, the site is fully static, and a
+custom domain (alchimie.f4t.dev) was easy to point at it.
+
+Set the custom domain in repo Settings, pointed DNS at GitHub, and
+selected "GitHub Actions" as the Pages source so the workflow could
+own the build. `.github/workflows/deploy.yml` runs on every push to
+`main` (and on manual dispatch). The build job runs typecheck, lint,
+and `vitest run` as quality gates, builds with `vite build`, then
+uploads `dist/` as a Pages artifact; a second job ships it via
+`actions/deploy-pages`. A `pages` concurrency group keeps two pushes
+from racing each other.
+
+The vite config now switches on Vite's `command` argument so the
+sprite tool's HTML entry only ships in dev (`command === 'serve'`).
+Production builds, local or CI, bundle only `index.html`. The dev
+server still serves any HTML file on request, so
+`/tools/sprite-tool.html` keeps working locally regardless of the
+rollup input set. `package.json` gained a `test:ci` script so the
+workflow can run vitest one-shot without inheriting watch mode.
+
+Skipped adding `public/CNAME`. The historical pain point with the
+Actions deploy source was that each deploy stripped the custom domain
+from Settings, which is why people committed a `CNAME` file to the
+artifact. After the first deploy here the custom domain stuck, DNS
+check passed, HTTPS stayed enforced, so GitHub appears to have fixed
+it. If a future deploy regresses, dropping a one-line `public/CNAME`
+is the fix.
+
 ## 2026-05-08 - Added a dynamic favicon
 
 A small polish piece outside the responsive-layout plan: the browser
