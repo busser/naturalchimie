@@ -3,6 +3,30 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Moved the portrait strip below the play area
+
+Held the phone one-handed and noticed the score and preview were sat
+right under the status bar, well out of thumb reach, while the field
+filled the lower two thirds of the screen where the thumb actually
+rests. Flipping the stack puts the parchment strip near the bottom of
+the screen where a glance and a thumb both land naturally, and the
+play area takes the upper space the eye is already drawn to.
+
+The change is one line of CSS: `flex-direction: column` becomes
+`column-reverse` for the portrait `#app`. DOM order stays
+score/preview first, playfield second, so screen readers still
+announce the score before the field; only the visual order flips.
+The cell math is symmetric (top gap, region, mid gap, region, bottom
+gap), so `HEIGHT_DIVISOR` stays at 16 - I just rewrote its breakdown
+comment to reflect the new order. Nothing in the touch input or
+renderers cares about which region is on top, so they were untouched.
+
+Renamed "top strip" to "bottom strip" in `09-responsive-layout.md`
+(including the ASCII diagram), in the `layout.ts` divisor comment,
+and in the `.info` rule comment in `style.css`. The `.info` class
+name itself stayed the same: it describes what the panel holds, not
+where it sits.
+
 ## 2026-05-08 - Tightened touch controls after phone playtest
 
 Two complaints from playing on a phone. Drops fired too easily: a tiny
