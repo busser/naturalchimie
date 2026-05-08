@@ -34,6 +34,13 @@ import {
   type Step,
 } from "../core/state";
 
+// Reference cell size the original pixel-tuned values were authored
+// against. Constants below were divided by this once so they read as
+// cell-units; multiplying by the live cellSize at the use site makes
+// them scale across viewport sizes while reproducing the original
+// pixel values exactly at cellSize = 48.
+const REFERENCE_CELL_PX = 48;
+
 // Merge animation phases ----------------------------------------
 //
 // 0..SHINE_DURATION_MS                       — original sprite stays at
@@ -80,18 +87,18 @@ const BUBBLE_TRAVEL_MAX_MS = 480;
 // rather than "how far the bubble travels outward".
 const BUBBLE_SCATTER_DISTANCE_MIN_CELLS = 1.1;
 const BUBBLE_SCATTER_DISTANCE_MAX_CELLS = 2.0;
-const BUBBLE_BASE_RADIUS_MIN_PX = 4.0;
-const BUBBLE_BASE_RADIUS_MAX_PX = 6.0;
+const BUBBLE_BASE_RADIUS_MIN_CELLS = 4.0 / REFERENCE_CELL_PX;
+const BUBBLE_BASE_RADIUS_MAX_CELLS = 6.0 / REFERENCE_CELL_PX;
 const BUBBLE_HALO_RADIUS_FACTOR = 2.5;
 // Slight growth toward arrival — bubble gathers energy as it pulls in.
 const BUBBLE_ARRIVAL_GROWTH = 0.35;
 
-const CENTRAL_ORB_BASE_RADIUS_PX = 3;
+const CENTRAL_ORB_BASE_RADIUS_CELLS = 3 / REFERENCE_CELL_PX;
 // Growth scales with sqrt of the arrival count rather than linearly:
 // a 3-cell merge has 12 bubbles, a 5-cell has 20, and linear growth
 // blew the orb past a full cell. sqrt keeps the central orb visibly
 // growing without dwarfing the playfield.
-const CENTRAL_ORB_GROWTH_PX = 2.8;
+const CENTRAL_ORB_GROWTH_CELLS = 2.8 / REFERENCE_CELL_PX;
 const CENTRAL_ORB_HALO_RADIUS_FACTOR = 2.0;
 // Each arrival kicks a transient size pulse on the central orb so the
 // merge bumps are visible. Pulses from concurrent arrivals sum.
@@ -114,8 +121,8 @@ const DROPLET_SCATTER_DISTANCE_MIN_CELLS = 0.7;
 const DROPLET_SCATTER_DISTANCE_MAX_CELLS = 1.2;
 // Smaller than bubbles (4–6 px) so they read as "tiny droplets",
 // not "more bubbles".
-const DROPLET_BASE_RADIUS_MIN_PX = 2.5;
-const DROPLET_BASE_RADIUS_MAX_PX = 4.0;
+const DROPLET_BASE_RADIUS_MIN_CELLS = 2.5 / REFERENCE_CELL_PX;
+const DROPLET_BASE_RADIUS_MAX_CELLS = 4.0 / REFERENCE_CELL_PX;
 // Downward sag at end of life, in cell units. Small — droplets are
 // flying outward, not falling.
 const DROPLET_GRAVITY_CELLS = 0.18;
@@ -156,8 +163,12 @@ export type Effect = {
   // Optional canvas-wide translation, in CSS pixels, applied around
   // the playfield render pass. The detonator uses this for the
   // screen kick at the moment of detonation; other effects don't
-  // need it.
-  getCanvasShake?(now: number): { readonly x: number; readonly y: number };
+  // need it. cellSize is passed so the kick scales with the live
+  // cell rather than baking in the reference 48px value.
+  getCanvasShake?(
+    now: number,
+    cellSize: number,
+  ): { readonly x: number; readonly y: number };
 };
 
 export function createEffect(
@@ -206,14 +217,14 @@ type Bubble = {
   readonly arrivalMs: number;
   readonly scatterAngleRad: number;
   readonly scatterDistanceCells: number;
-  readonly baseRadiusPx: number;
+  readonly baseRadiusCells: number;
   readonly hue: "white" | "pale-yellow";
 };
 
 type Droplet = {
   readonly angleRad: number;
   readonly scatterDistanceCells: number;
-  readonly baseRadiusPx: number;
+  readonly baseRadiusCells: number;
   readonly hue: "white" | "pale-yellow";
 };
 
@@ -322,9 +333,9 @@ function seedGroupStates(groups: readonly ReactingGroup[]): GroupState[] {
             BUBBLE_SCATTER_DISTANCE_MAX_CELLS,
             Math.random(),
           ),
-          baseRadiusPx: lerp(
-            BUBBLE_BASE_RADIUS_MIN_PX,
-            BUBBLE_BASE_RADIUS_MAX_PX,
+          baseRadiusCells: lerp(
+            BUBBLE_BASE_RADIUS_MIN_CELLS,
+            BUBBLE_BASE_RADIUS_MAX_CELLS,
             Math.random(),
           ),
           hue: Math.random() < 0.55 ? "white" : "pale-yellow",
@@ -350,9 +361,9 @@ function seedGroupStates(groups: readonly ReactingGroup[]): GroupState[] {
           DROPLET_SCATTER_DISTANCE_MAX_CELLS,
           Math.random(),
         ),
-        baseRadiusPx: lerp(
-          DROPLET_BASE_RADIUS_MIN_PX,
-          DROPLET_BASE_RADIUS_MAX_PX,
+        baseRadiusCells: lerp(
+          DROPLET_BASE_RADIUS_MIN_CELLS,
+          DROPLET_BASE_RADIUS_MAX_CELLS,
           Math.random(),
         ),
         hue: Math.random() < 0.55 ? "white" : "pale-yellow",
@@ -439,7 +450,10 @@ function drawBubbles(
       oneMinus * oneMinus * cellCy +
       2 * oneMinus * u * ctrlY +
       u * u * landingCy;
-    const radius = bubble.baseRadiusPx * (1 + BUBBLE_ARRIVAL_GROWTH * travelT);
+    const radius =
+      bubble.baseRadiusCells *
+      cellSize *
+      (1 + BUBBLE_ARRIVAL_GROWTH * travelT);
     drawBubble(ctx, x, y, radius, 1, bubble.hue);
   }
   ctx.restore();
@@ -497,8 +511,9 @@ function drawCentralOrbAndPop(
   }
   if (arrivedCount === 0) return;
   let radius =
-    CENTRAL_ORB_BASE_RADIUS_PX +
-    CENTRAL_ORB_GROWTH_PX * Math.sqrt(arrivedCount);
+    (CENTRAL_ORB_BASE_RADIUS_CELLS +
+      CENTRAL_ORB_GROWTH_CELLS * Math.sqrt(arrivedCount)) *
+    cellSize;
   radius *= 1 + pulse;
   // Pop swell: orb keeps growing through POP_DURATION_MS, then snaps
   // off when popEndMs is reached (handled by the early return above).
@@ -570,8 +585,9 @@ function drawDroplets(
   // visible membrane the player just saw burst.
   const orbPopRadiusPx =
     POP_PEAK_SCALE *
-    (CENTRAL_ORB_BASE_RADIUS_PX +
-      CENTRAL_ORB_GROWTH_PX * Math.sqrt(state.bubbles.length));
+    (CENTRAL_ORB_BASE_RADIUS_CELLS +
+      CENTRAL_ORB_GROWTH_CELLS * Math.sqrt(state.bubbles.length)) *
+    cellSize;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   for (const droplet of droplets) {
@@ -582,7 +598,7 @@ function drawDroplets(
       ctx,
       x,
       y,
-      droplet.baseRadiusPx * radiusFactor,
+      droplet.baseRadiusCells * cellSize * radiusFactor,
       alpha,
       droplet.hue,
     );
@@ -652,8 +668,8 @@ const EMBER_LIFETIME_MS = 380;
 const EMBER_SPEED_MIN_CELLS = 0.6;
 const EMBER_SPEED_MAX_CELLS = 1.3;
 const EMBER_GRAVITY_CELLS = 1.4;
-const EMBER_BASE_RADIUS_MIN_PX = 2.0;
-const EMBER_BASE_RADIUS_MAX_PX = 3.5;
+const EMBER_BASE_RADIUS_MIN_CELLS = 2.0 / REFERENCE_CELL_PX;
+const EMBER_BASE_RADIUS_MAX_CELLS = 3.5 / REFERENCE_CELL_PX;
 const EMBER_SHRINK_FACTOR = 0.55;
 // Embers shed off the sides and trailing edge of the fireball, so
 // angles cluster horizontally and upward (positive sin = above
@@ -718,7 +734,7 @@ type Ember = {
   readonly originColumnOffset: number;
   readonly angleRad: number;
   readonly speedCells: number;
-  readonly baseRadiusPx: number;
+  readonly baseRadiusCells: number;
   readonly hue: "yellow" | "orange" | "red";
   readonly gravityCells: number;
   readonly lifetimeMs: number;
@@ -794,9 +810,9 @@ function createDynamiteBlastEffect(
           EMBER_SPEED_MAX_CELLS,
           Math.random(),
         ),
-        baseRadiusPx: lerp(
-          EMBER_BASE_RADIUS_MIN_PX,
-          EMBER_BASE_RADIUS_MAX_PX,
+        baseRadiusCells: lerp(
+          EMBER_BASE_RADIUS_MIN_CELLS,
+          EMBER_BASE_RADIUS_MAX_CELLS,
           Math.random(),
         ),
         hue: pickEmberHue(),
@@ -825,9 +841,9 @@ function createDynamiteBlastEffect(
         FLOOR_EMBER_SPEED_MAX_CELLS,
         Math.random(),
       ),
-      baseRadiusPx: lerp(
-        EMBER_BASE_RADIUS_MIN_PX,
-        EMBER_BASE_RADIUS_MAX_PX,
+      baseRadiusCells: lerp(
+        EMBER_BASE_RADIUS_MIN_CELLS,
+        EMBER_BASE_RADIUS_MAX_CELLS,
         Math.random(),
       ),
       hue: pickEmberHue(),
@@ -1133,7 +1149,8 @@ function drawEmbers(
     const baseY = canvasHeight - (ember.originRow + 0.5) * cellSize;
     const x = baseX + Math.cos(ember.angleRad) * dist;
     const y = baseY - Math.sin(ember.angleRad) * dist + sag;
-    const radius = ember.baseRadiusPx * (1 - EMBER_SHRINK_FACTOR * t);
+    const radius =
+      ember.baseRadiusCells * cellSize * (1 - EMBER_SHRINK_FACTOR * t);
     const alpha = (1 - t) * (1 - t);
     drawEmber(ctx, x, y, radius, alpha, ember.hue);
   }
@@ -1360,7 +1377,7 @@ const SQUASH_BOUNCE_START_T = 0.8;
 // in place. Amplitude ramps from 0 across the press, so the rumble
 // builds — by the time it's loud enough to read, the plunger is
 // also at peak compression.
-const PRESS_JITTER_AMPLITUDE_PX = 1.5;
+const PRESS_JITTER_AMPLITUDE_CELLS = 1.5 / REFERENCE_CELL_PX;
 const PRESS_JITTER_FREQ_X_HZ = 32;
 const PRESS_JITTER_FREQ_Y_HZ = 39;
 
@@ -1447,8 +1464,8 @@ const SHRAPNEL_REST_SPEED_CPS = 0.5;
 // cost. With 0.5 damping, ~6–8 bounces is more than the eye reads.
 const SHRAPNEL_MAX_BOUNCES = 8;
 
-const SHRAPNEL_SIZE_MIN_PX = 7;
-const SHRAPNEL_SIZE_MAX_PX = 13;
+const SHRAPNEL_SIZE_MIN_CELLS = 7 / REFERENCE_CELL_PX;
+const SHRAPNEL_SIZE_MAX_CELLS = 13 / REFERENCE_CELL_PX;
 // Tumble speed, radians per ms. ~0.012 rad/ms ≈ 1.9 turns/sec.
 const SHRAPNEL_ROTATION_SPEED_MAX_RAD_PER_MS = 0.012;
 // Cone half-width around the radial direction. Chunks fan out
@@ -1503,7 +1520,7 @@ const SHOCKWAVE_HALF_THICKNESS_CELLS = 0.16;
 // a recognizable pattern, and amplitude decays linearly over the
 // shake's life so the kick feels like a bang, not a rumble.
 const SHAKE_DURATION_MS = 180;
-const SHAKE_AMPLITUDE_PX = 6;
+const SHAKE_AMPLITUDE_CELLS = 6 / REFERENCE_CELL_PX;
 const SHAKE_FREQ_X_HZ = 28;
 const SHAKE_FREQ_Y_HZ = 33;
 
@@ -1513,7 +1530,7 @@ type DetEmber = {
   readonly originRowCells: number;
   readonly angleRad: number;
   readonly speedCells: number;
-  readonly baseRadiusPx: number;
+  readonly baseRadiusCells: number;
   readonly hue: "yellow" | "orange" | "red";
   readonly gravityCells: number;
   readonly lifetimeMs: number;
@@ -1539,7 +1556,7 @@ type Shrapnel = {
   readonly rotationStartRad: number;
   readonly rotationSpeedRadPerMs: number;
   readonly color: string;
-  readonly sizePx: number;
+  readonly sizeCells: number;
   readonly polygon: readonly { readonly x: number; readonly y: number }[];
   readonly gravityCellsPerMs2: number;
   readonly segments: readonly ShrapnelSegment[];
@@ -1676,9 +1693,9 @@ function createDetonateEffect(
           FIREBALL_EMBER_SPEED_MAX_CELLS,
           Math.random(),
         ),
-        baseRadiusPx: lerp(
-          EMBER_BASE_RADIUS_MIN_PX,
-          EMBER_BASE_RADIUS_MAX_PX,
+        baseRadiusCells: lerp(
+          EMBER_BASE_RADIUS_MIN_CELLS,
+          EMBER_BASE_RADIUS_MAX_CELLS,
           Math.random(),
         ),
         hue: pickEmberHue(),
@@ -1707,9 +1724,9 @@ function createDetonateEffect(
 
   return {
     skipCells,
-    getCanvasShake(now: number) {
+    getCanvasShake(now: number, cellSize: number) {
       const sinceDetonationMs = now - startNow - DETONATOR_PRESS_MS;
-      return shakeOffset(sinceDetonationMs);
+      return shakeOffset(sinceDetonationMs, cellSize);
     },
     getSpriteItems(now, prev, sprites) {
       const elapsedMs = now - startNow;
@@ -1744,7 +1761,7 @@ function createDetonateEffect(
       if (elapsedMs < DETONATOR_PRESS_MS) {
         const pressT = elapsedMs / DETONATOR_PRESS_MS;
         const squashY = squashCurve(pressT);
-        const jitter = pressJitterOffset(elapsedMs, pressT);
+        const jitter = pressJitterOffset(elapsedMs, pressT, cellSize);
         drawPressGlow(ctx, detonators, pressT, cellSize, canvasHeight);
         for (const det of detonators) {
           drawSquashedDetonator(
@@ -1809,7 +1826,10 @@ function squashCurve(t: number): number {
   return lerp(SQUASH_MIN, SQUASH_BOUNCE, k);
 }
 
-function shakeOffset(sinceDetonationMs: number): {
+function shakeOffset(
+  sinceDetonationMs: number,
+  cellSize: number,
+): {
   readonly x: number;
   readonly y: number;
 } {
@@ -1817,7 +1837,7 @@ function shakeOffset(sinceDetonationMs: number): {
     return { x: 0, y: 0 };
   }
   const t = sinceDetonationMs / SHAKE_DURATION_MS;
-  const amp = SHAKE_AMPLITUDE_PX * (1 - t);
+  const amp = SHAKE_AMPLITUDE_CELLS * cellSize * (1 - t);
   const phase = (sinceDetonationMs / 1000) * Math.PI * 2;
   return {
     x: amp * Math.sin(phase * SHAKE_FREQ_X_HZ),
@@ -1852,10 +1872,11 @@ function drawSquashedDetonator(
 function pressJitterOffset(
   elapsedMs: number,
   pressT: number,
+  cellSize: number,
 ): { readonly x: number; readonly y: number } {
   // Amplitude eases in across the press as t² so the rumble is
   // imperceptible at the start and unmistakable at the bounce.
-  const amp = PRESS_JITTER_AMPLITUDE_PX * pressT * pressT;
+  const amp = PRESS_JITTER_AMPLITUDE_CELLS * cellSize * pressT * pressT;
   const phase = (elapsedMs / 1000) * Math.PI * 2;
   return {
     x: amp * Math.sin(phase * PRESS_JITTER_FREQ_X_HZ),
@@ -2103,7 +2124,11 @@ function buildShrapnel(
     rotationSpeedRadPerMs:
       (Math.random() - 0.5) * 2 * SHRAPNEL_ROTATION_SPEED_MAX_RAD_PER_MS,
     color,
-    sizePx: lerp(SHRAPNEL_SIZE_MIN_PX, SHRAPNEL_SIZE_MAX_PX, Math.random()),
+    sizeCells: lerp(
+      SHRAPNEL_SIZE_MIN_CELLS,
+      SHRAPNEL_SIZE_MAX_CELLS,
+      Math.random(),
+    ),
     polygon: randomPolygon(),
     gravityCellsPerMs2,
     segments: simulateShrapnelSegments(
@@ -2285,11 +2310,12 @@ function drawShrapnel(
     ctx.translate(screenX, screenY);
     ctx.rotate(rotation);
     ctx.beginPath();
+    const sizePx = chunk.sizeCells * cellSize;
     const p0 = chunk.polygon[0];
-    ctx.moveTo(p0.x * chunk.sizePx, p0.y * chunk.sizePx);
+    ctx.moveTo(p0.x * sizePx, p0.y * sizePx);
     for (let i = 1; i < chunk.polygon.length; i++) {
       const p = chunk.polygon[i];
-      ctx.lineTo(p.x * chunk.sizePx, p.y * chunk.sizePx);
+      ctx.lineTo(p.x * sizePx, p.y * sizePx);
     }
     ctx.closePath();
     ctx.fillStyle = chunk.color;
@@ -2326,7 +2352,8 @@ function drawDetEmbers(
     const baseY = canvasHeight - ember.originRowCells * cellSize;
     const x = baseX + Math.cos(ember.angleRad) * dist;
     const y = baseY - Math.sin(ember.angleRad) * dist + sag;
-    const radius = ember.baseRadiusPx * (1 - EMBER_SHRINK_FACTOR * t);
+    const radius =
+      ember.baseRadiusCells * cellSize * (1 - EMBER_SHRINK_FACTOR * t);
     const alpha = (1 - t) * (1 - t);
     drawEmber(ctx, x, y, radius, alpha, ember.hue);
   }

@@ -15,6 +15,13 @@
 import type { SpriteAtlas } from '../assets/sprite-loader';
 import { spriteSourcePointToScreen } from '../assets/sprite-renderer';
 
+// Reference cell size the original pixel-tuned values were authored
+// against. Constants below were divided by this once so they read as
+// cell-units; multiplying by the live cellSize at the use site makes
+// them scale across viewport sizes while reproducing the original
+// pixel values exactly at cellSize = 48.
+const REFERENCE_CELL_PX = 48;
+
 // Modest density: the fuse is ambient idle decoration, not a focal
 // effect. Roughly half a spark and one-tenth of a smoke wisp per
 // frame at 60 fps.
@@ -23,31 +30,31 @@ const SMOKE_RATE_PER_SEC = 7;
 
 // Sparks shoot upward off the fuse tip with a modest spread.
 const SPARK_LIFETIME_MS = 320;
-const SPARK_SPEED_MIN_PX_PER_SEC = 35;
-const SPARK_SPEED_MAX_PX_PER_SEC = 95;
+const SPARK_SPEED_MIN_CELLS_PER_SEC = 35 / REFERENCE_CELL_PX;
+const SPARK_SPEED_MAX_CELLS_PER_SEC = 95 / REFERENCE_CELL_PX;
 // 45°..135° measured from horizontal — particles fan upward in a
 // roughly cone pointing straight up. Bias to symmetric fan around
 // vertical so the mean direction reads as "rising".
 const SPARK_ANGLE_MIN_RAD = Math.PI * 0.25;
 const SPARK_ANGLE_MAX_RAD = Math.PI * 0.75;
-const SPARK_GRAVITY_PX_PER_SEC2 = 70;
-const SPARK_BASE_RADIUS_MIN_PX = 1.4;
-const SPARK_BASE_RADIUS_MAX_PX = 2.4;
+const SPARK_GRAVITY_CELLS_PER_SEC2 = 70 / REFERENCE_CELL_PX;
+const SPARK_BASE_RADIUS_MIN_CELLS = 1.4 / REFERENCE_CELL_PX;
+const SPARK_BASE_RADIUS_MAX_CELLS = 2.4 / REFERENCE_CELL_PX;
 const SPARK_SHRINK_FACTOR = 0.4;
 
 // Smoke wisps drift slowly upward, expanding and fading.
 const SMOKE_LIFETIME_MS = 720;
-const SMOKE_DRIFT_PX_PER_SEC = 28;
-const SMOKE_LATERAL_DRIFT_PX_PER_SEC = 14;
-const SMOKE_BASE_RADIUS_MIN_PX = 2.5;
-const SMOKE_BASE_RADIUS_MAX_PX = 4.5;
+const SMOKE_DRIFT_CELLS_PER_SEC = 28 / REFERENCE_CELL_PX;
+const SMOKE_LATERAL_DRIFT_CELLS_PER_SEC = 14 / REFERENCE_CELL_PX;
+const SMOKE_BASE_RADIUS_MIN_CELLS = 2.5 / REFERENCE_CELL_PX;
+const SMOKE_BASE_RADIUS_MAX_CELLS = 4.5 / REFERENCE_CELL_PX;
 const SMOKE_RADIUS_GROWTH = 1.4;
 
 // Tip glow: a small orange dot pinned to the fuse tip while lit. The
 // pulse keeps it from looking dead-static; frequency is intentionally
 // off-integer to avoid frame-locking.
-const GLOW_CORE_RADIUS_PX = 1.8;
-const GLOW_HALO_RADIUS_PX = 5;
+const GLOW_CORE_RADIUS_CELLS = 1.8 / REFERENCE_CELL_PX;
+const GLOW_HALO_RADIUS_CELLS = 5 / REFERENCE_CELL_PX;
 const GLOW_PULSE_FREQ_HZ = 4.7;
 const GLOW_PULSE_AMPLITUDE = 0.18;
 
@@ -59,9 +66,9 @@ type Spark = {
   birthMs: number;
   originX: number;
   originY: number;
-  vx: number;
-  vy: number;
-  baseRadiusPx: number;
+  vxCellsPerSec: number;
+  vyCellsPerSec: number;
+  baseRadiusCells: number;
   hue: 'white' | 'yellow';
 };
 
@@ -69,8 +76,8 @@ type Smoke = {
   birthMs: number;
   originX: number;
   originY: number;
-  vx: number;
-  baseRadiusPx: number;
+  vxCellsPerSec: number;
+  baseRadiusCells: number;
 };
 
 export type FuseParticles = {
@@ -131,9 +138,9 @@ export function createFuseParticles(): FuseParticles {
       // behind the glow (additive, hot dot on the sprite) which sits
       // behind the sparks (additive, bright points). Drawing smoke
       // first matches that stack.
-      drawSmoke(ctx, smokes, now);
-      if (tip !== null) drawGlow(ctx, tip.x, tip.y, now);
-      drawSparks(ctx, sparks, now);
+      drawSmoke(ctx, smokes, now, cellSize);
+      if (tip !== null) drawGlow(ctx, tip.x, tip.y, now, cellSize);
+      drawSparks(ctx, sparks, now, cellSize);
     },
   };
 }
@@ -158,15 +165,23 @@ function fuseTipScreen(
 
 function seedSpark(now: number, x: number, y: number): Spark {
   const angle = lerp(SPARK_ANGLE_MIN_RAD, SPARK_ANGLE_MAX_RAD, Math.random());
-  const speed = lerp(SPARK_SPEED_MIN_PX_PER_SEC, SPARK_SPEED_MAX_PX_PER_SEC, Math.random());
+  const speed = lerp(
+    SPARK_SPEED_MIN_CELLS_PER_SEC,
+    SPARK_SPEED_MAX_CELLS_PER_SEC,
+    Math.random(),
+  );
   return {
     birthMs: now,
     originX: x,
     originY: y,
-    vx: Math.cos(angle) * speed,
+    vxCellsPerSec: Math.cos(angle) * speed,
     // Canvas y increases downward; sparks rise → negative vy.
-    vy: -Math.sin(angle) * speed,
-    baseRadiusPx: lerp(SPARK_BASE_RADIUS_MIN_PX, SPARK_BASE_RADIUS_MAX_PX, Math.random()),
+    vyCellsPerSec: -Math.sin(angle) * speed,
+    baseRadiusCells: lerp(
+      SPARK_BASE_RADIUS_MIN_CELLS,
+      SPARK_BASE_RADIUS_MAX_CELLS,
+      Math.random(),
+    ),
     hue: Math.random() < 0.6 ? 'white' : 'yellow',
   };
 }
@@ -176,8 +191,13 @@ function seedSmoke(now: number, x: number, y: number): Smoke {
     birthMs: now,
     originX: x,
     originY: y,
-    vx: (Math.random() - 0.5) * 2 * SMOKE_LATERAL_DRIFT_PX_PER_SEC,
-    baseRadiusPx: lerp(SMOKE_BASE_RADIUS_MIN_PX, SMOKE_BASE_RADIUS_MAX_PX, Math.random()),
+    vxCellsPerSec:
+      (Math.random() - 0.5) * 2 * SMOKE_LATERAL_DRIFT_CELLS_PER_SEC,
+    baseRadiusCells: lerp(
+      SMOKE_BASE_RADIUS_MIN_CELLS,
+      SMOKE_BASE_RADIUS_MAX_CELLS,
+      Math.random(),
+    ),
   };
 }
 
@@ -185,6 +205,7 @@ function drawSparks(
   ctx: CanvasRenderingContext2D,
   sparks: Spark[],
   now: number,
+  cellSize: number,
 ): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -194,12 +215,13 @@ function drawSparks(
     if (ageMs >= SPARK_LIFETIME_MS) continue;
     const t = ageMs / SPARK_LIFETIME_MS;
     const tSec = ageMs / 1000;
-    const x = spark.originX + spark.vx * tSec;
+    const x = spark.originX + spark.vxCellsPerSec * cellSize * tSec;
     const y =
       spark.originY +
-      spark.vy * tSec +
-      0.5 * SPARK_GRAVITY_PX_PER_SEC2 * tSec * tSec;
-    const radius = spark.baseRadiusPx * (1 - SPARK_SHRINK_FACTOR * t);
+      spark.vyCellsPerSec * cellSize * tSec +
+      0.5 * SPARK_GRAVITY_CELLS_PER_SEC2 * cellSize * tSec * tSec;
+    const radius =
+      spark.baseRadiusCells * cellSize * (1 - SPARK_SHRINK_FACTOR * t);
     const alpha = (1 - t) * (1 - t);
     drawSparkPoint(ctx, x, y, radius, alpha, spark.hue);
     sparks[writeIdx++] = spark;
@@ -240,6 +262,7 @@ function drawSmoke(
   ctx: CanvasRenderingContext2D,
   smokes: Smoke[],
   now: number,
+  cellSize: number,
 ): void {
   // Default composite (not 'lighter') so smoke darkens against the
   // sky behind the playfield, like real smoke.
@@ -250,9 +273,10 @@ function drawSmoke(
     if (ageMs >= SMOKE_LIFETIME_MS) continue;
     const t = ageMs / SMOKE_LIFETIME_MS;
     const tSec = ageMs / 1000;
-    const x = smoke.originX + smoke.vx * tSec;
-    const y = smoke.originY - SMOKE_DRIFT_PX_PER_SEC * tSec;
-    const radius = smoke.baseRadiusPx * (1 + SMOKE_RADIUS_GROWTH * t);
+    const x = smoke.originX + smoke.vxCellsPerSec * cellSize * tSec;
+    const y = smoke.originY - SMOKE_DRIFT_CELLS_PER_SEC * cellSize * tSec;
+    const radius =
+      smoke.baseRadiusCells * cellSize * (1 + SMOKE_RADIUS_GROWTH * t);
     // Fade in over the first ~25% of life (otherwise wisps pop into
     // existence) and out over the rest, biased so they're brightest
     // around mid-life.
@@ -280,13 +304,14 @@ function drawGlow(
   cx: number,
   cy: number,
   now: number,
+  cellSize: number,
 ): void {
   const pulse =
     1 +
     GLOW_PULSE_AMPLITUDE *
       Math.sin((now / 1000) * Math.PI * 2 * GLOW_PULSE_FREQ_HZ);
-  const coreR = GLOW_CORE_RADIUS_PX * pulse;
-  const haloR = GLOW_HALO_RADIUS_PX * pulse;
+  const coreR = GLOW_CORE_RADIUS_CELLS * cellSize * pulse;
+  const haloR = GLOW_HALO_RADIUS_CELLS * cellSize * pulse;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);

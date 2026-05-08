@@ -118,7 +118,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
       // line, sprites, effect overlays, fuse. clearRect runs before
       // the translate so the cleared region tracks the canvas, not
       // the shifted scene.
-      const shake = effect?.getCanvasShake?.(now) ?? null;
+      const shake = effect?.getCanvasShake?.(now, cellSize) ?? null;
       ctx.save();
       if (shake !== null) ctx.translate(shake.x, shake.y);
       drawLoseThreshold(ctx, cellSize, cssWidth, cssHeight);
