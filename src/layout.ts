@@ -19,8 +19,8 @@ export type LayoutModule = {
 };
 
 // 7.4 = 7 grid columns + two 0.2-cell side gaps.
-// 16 = 0.2 + 2.4 (top strip: 2-cell preview + 0.2-cell parchment
-// padding above and below) + 0.2 + 13 (play area) + 0.2.
+// 16 = 0.2 + 13 (play area) + 0.2 + 2.4 (bottom strip: 2-cell
+// preview + 0.2-cell parchment padding above and below) + 0.2.
 const WIDTH_DIVISOR = 7.4;
 const HEIGHT_DIVISOR = 16;
 

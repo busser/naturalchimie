@@ -20,7 +20,7 @@ Aspect ratio alone decides:
 
 - `width > height` → **landscape** layout (sidebar on the left,
   playfield on the right; see `04-visual-style.md`).
-- otherwise → **portrait** layout (top strip above the play
+- otherwise → **portrait** layout (bottom strip below the play
   area; described below).
 
 No user-agent sniffing, no `pointer: coarse` check. A foldable
@@ -31,19 +31,17 @@ testing on near-square form factors.
 
 ## Portrait layout
 
-The portrait layout stacks two regions vertically: a parchment-
-brown **top strip** holding the score and next-pair preview, and
-the sky-blue **play area** holding the 7-column game field.
+The portrait layout stacks two regions vertically: the sky-blue
+**play area** holding the 7-column game field, and a parchment-
+brown **bottom strip** holding the score and next-pair preview.
 Dark-brown background fills the gaps between and around the
-regions.
+regions. Putting the strip at the bottom keeps the score and
+preview within easy thumb reach when the device is held
+one-handed.
 
 ```
 ┌─────────────────────────────────────┐
 │           (outer gap)               │
-│  ┌───────────────────────────────┐  │
-│  │   SCORE     │    NEXT PAIR    │  │   ← top strip
-│  └───────────────────────────────┘  │
-│           (mid gap)                 │
 │  ┌───────────────────────────────┐  │
 │  │                               │  │
 │  │                               │  │
@@ -51,6 +49,10 @@ regions.
 │  │           (sky)               │  │
 │  │                               │  │
 │  │                               │  │
+│  └───────────────────────────────┘  │
+│           (mid gap)                 │
+│  ┌───────────────────────────────┐  │
+│  │   SCORE     │    NEXT PAIR    │  │   ← bottom strip
 │  └───────────────────────────────┘  │
 │           (outer gap)               │
 └─────────────────────────────────────┘
@@ -78,8 +80,8 @@ cell = min(
 Where:
 
 - `7.4` = 7 grid columns plus two 0.2-cell side gaps.
-- `15.6` = 0.2 (top gap) + 2 (top strip) + 0.2 (mid gap) + 13
-  (play area) + 0.2 (bottom gap).
+- `15.6` = 0.2 (top gap) + 13 (play area) + 0.2 (mid gap) + 2
+  (bottom strip) + 0.2 (bottom gap).
 - `safe_area_top` and `safe_area_bottom` reserve room for
   device chrome (status bar, notch, home indicator). On the web,
   `env(safe-area-inset-top)` and `env(safe-area-inset-bottom)`
@@ -89,7 +91,7 @@ The smaller of the two constraints wins. On phones, height-fit
 typically wins, so leftover horizontal space becomes extra
 background flanking the play area. On tablets in portrait, the
 result is simply a larger cell value with the same proportions.
-The play area is centered horizontally; the top strip stretches
+The play area is centered horizontally; the bottom strip stretches
 to the same width as the play area.
 
 `viewport_height` is measured with the **small viewport** unit
@@ -107,13 +109,13 @@ them into concrete pixels.
 | Region | Size |
 |---|---|
 | Outer gap (top, bottom, left, right) | 0.2 cells |
-| Top strip height | 2 cells |
-| Mid gap (between top strip and play area) | 0.2 cells |
 | Play area | 7 × 13 cells |
+| Mid gap (between play area and bottom strip) | 0.2 cells |
+| Bottom strip height | 2 cells |
 
-### Top strip contents
+### Bottom strip contents
 
-The top strip lays out horizontally with the score on the left
+The bottom strip lays out horizontally with the score on the left
 and the next-pair preview on the right, both vertically
 centered. The score is rendered in the same hand-drawn serif
 numeral as the landscape sidebar; the preview uses the same
@@ -147,8 +149,8 @@ The keyboard's four actions map to four touch gestures:
 
 A gesture may begin **anywhere on the play area** (or, in the
 landscape layout, anywhere on the playfield). It does not need
-to start on the active pair or in any specific column. The top
-strip and sidebar are not gesture-active.
+to start on the active pair or in any specific column. The
+bottom strip and sidebar are not gesture-active.
 
 #### Drag
 

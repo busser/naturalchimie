@@ -55,14 +55,17 @@ body {
 }
 
 :root[data-layout='portrait'] #app {
-  flex-direction: column;
+  /* `column-reverse` puts the strip below the play area visually while
+     leaving the score/preview first in the DOM, so screen readers and
+     focus order still announce the score before the field. */
+  flex-direction: column-reverse;
   align-items: center;
   gap: calc(var(--cell) * 0.2);
   padding: calc(var(--cell) * 0.2);
 }
 
 /* Parchment panel that holds the score and preview. Renders as a
-   vertical sidebar in landscape and a horizontal top strip in
+   vertical sidebar in landscape and a horizontal bottom strip in
    portrait; the children are the same DOM nodes either way. */
 .info {
   background: var(--parchment);
