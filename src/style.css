@@ -214,17 +214,14 @@ body {
   display: none;
 }
 
-/* Splash overlay. The HTML markup paints before any JS runs so users
-   see this instead of the bare landscape layout while sprites load.
-   main.ts adds .is-loaded after the first canvas draw, fading to the
-   running game. */
+/* Solid frame-brown overlay that paints before any JS runs, hiding
+   the bare landscape layout that would otherwise flash on portrait
+   viewports while sprites load. main.ts adds .is-loaded after the
+   first canvas draw, fading the overlay to reveal the running game. */
 #splash {
   position: fixed;
   inset: 0;
   background: var(--frame);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 100;
   transition: opacity 500ms ease-out;
 }
@@ -232,50 +229,4 @@ body {
 #splash.is-loaded {
   opacity: 0;
   pointer-events: none;
-}
-
-.splash__flask {
-  width: 144px;
-  height: auto;
-  animation: splash-bob 2.4s ease-in-out infinite;
-}
-
-@keyframes splash-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-.splash__bubble {
-  opacity: 0;
-  animation: splash-bubble 2.4s ease-in infinite;
-}
-
-.splash__bubble--b {
-  animation-delay: 0.8s;
-}
-
-.splash__bubble--c {
-  animation-delay: 1.6s;
-}
-
-@keyframes splash-bubble {
-  0% {
-    transform: translateY(8px);
-    opacity: 0;
-  }
-  20% {
-    opacity: 0.9;
-  }
-  90% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: translateY(-30px);
-    opacity: 0;
-  }
 }
