@@ -8,6 +8,7 @@ import { createLayout } from './layout';
 import { createRenderer } from './renderer/playfield';
 import { createPreviewRenderer } from './renderer/preview';
 import { createStore } from './store';
+import { startVersionCheck } from './version-check';
 
 function requireElement<T extends HTMLElement>(
   id: string,
@@ -30,6 +31,7 @@ function hideSplash(): void {
 }
 
 async function main(): Promise<void> {
+  startVersionCheck();
   const canvas = requireElement('playfield-canvas', HTMLCanvasElement);
   const playfieldEl = canvas.parentElement;
   if (!(playfieldEl instanceof HTMLElement)) {
