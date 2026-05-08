@@ -10,6 +10,11 @@
      --cell to the root. The reference cell size from the original
      fixed layout, so the first paint matches that build. */
   --cell: 48px;
+  /* `100svh` keeps the layout sized for the smaller viewport (with
+     the mobile address bar visible) so it does not reflow when the
+     bar hides. The dark-brown frame fills any extra space. */
+  min-height: 100svh;
+  background: var(--frame);
 }
 
 * {
@@ -26,29 +31,64 @@ body {
   background: var(--frame);
   color: var(--score-ink);
   font-family: Georgia, 'Times New Roman', serif;
+  min-height: 100svh;
+  /* Keep score/preview/playfield clear of status bars, notches, and
+     home indicators. layout.ts reads the same env() values to size
+     the cell, so visual padding and cell math stay in sync. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* Default arrangement matches the landscape build pixel-for-pixel; the
+   portrait override below kicks in when layout.ts writes
+   data-layout="portrait" on the root. The default `align-items: stretch`
+   makes the sidebar fill the playfield's 12-cell height; portrait
+   centers along the cross axis instead. */
 #app {
   display: flex;
+  flex-direction: row;
   gap: calc(var(--cell) / 3);
   padding: calc(var(--cell) / 3);
 }
 
-/* The 25/6 ratio reproduces the previous 200px sidebar at the
-   reference 48px cell (200 / 48 = 25/6) and lets the sidebar scale
-   in cell-units at any other cell size. */
-.sidebar {
-  width: calc(var(--cell) * 25 / 6);
+:root[data-layout='portrait'] #app {
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.2);
+  padding: calc(var(--cell) * 0.2);
+}
+
+/* Parchment panel that holds the score and preview. Renders as a
+   vertical sidebar in landscape and a horizontal top strip in
+   portrait; the children are the same DOM nodes either way. */
+.info {
   background: var(--parchment);
   border: 1px solid var(--frame);
   border-radius: 4px;
-  padding: calc(var(--cell) * 0.5) calc(var(--cell) / 3);
   display: flex;
   flex-direction: column;
+  /* The 25/6 ratio reproduces the previous 200px sidebar at the
+     reference 48px cell (200 / 48 = 25/6) and lets the sidebar scale
+     in cell-units at any other cell size. */
+  width: calc(var(--cell) * 25 / 6);
+  padding: calc(var(--cell) * 0.5) calc(var(--cell) / 3);
   gap: calc(var(--cell) * 0.5);
+}
+
+:root[data-layout='portrait'] .info {
+  flex-direction: row;
+  width: calc(var(--cell) * 7);
+  /* 2.4 cells = 2-cell preview + 0.2 cells of parchment showing above
+     and below the recess, matching the 0.2-cell outer/mid-gap rhythm
+     used elsewhere in the portrait layout. layout.ts's HEIGHT_DIVISOR
+     accounts for this thicker strip. */
+  height: calc(var(--cell) * 2.4);
+  padding: calc(var(--cell) * 0.2) calc(var(--cell) * 0.5);
+  gap: calc(var(--cell) * 0.5);
+  align-items: center;
 }
 
 .score {
@@ -59,6 +99,12 @@ body {
   line-height: 1;
 }
 
+:root[data-layout='portrait'] .score {
+  /* Take the room left of the preview so the numeral centers in its
+     half of the strip rather than hugging the parchment edge. */
+  flex: 1;
+}
+
 .preview {
   background: var(--parchment-recess);
   border-radius: 4px;
@@ -67,6 +113,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+:root[data-layout='portrait'] .preview {
+  /* Match the preview canvas's intrinsic 3-cell width so the recess
+     hugs the canvas with no flanking parchment showing through. */
+  width: calc(var(--cell) * 3);
+  flex: none;
 }
 
 .preview canvas {
