@@ -163,6 +163,18 @@ current column and moves from there.
 The pair clamps at the grid edges. Dragging further left when
 already in column 1 has no effect.
 
+Shifts are **rate-limited**: at most one column per animation
+frame, and only while the input/step pipeline is idle. The
+finger may move faster than the pair animates, but the pair
+will never run ahead of the finger, and the queue cannot grow
+arbitrarily. Lifting the finger ends the gesture immediately:
+any columns the finger reached but the pair had not yet caught
+up to are discarded. As a consequence, a quick swipe shifts the
+pair only by what was dispatched before lift-off (typically one
+column for a fast flick); reaching a distant column requires
+holding the finger at the destination long enough for the pair
+to catch up.
+
 #### Tap
 
 A tap is a touch-down + touch-up within a small time and
@@ -171,14 +183,27 @@ clockwise (same semantics as the up-arrow).
 
 #### Flick (drop)
 
-A drop fires when the gesture's downward velocity exceeds a
-threshold expressed in cell-units per second, so it scales with
-cell size. A starting value of **8 cells/second** is reasonable
-and should be tuned by feel.
+A drop fires only when the finger has both moved downward fast
+**and** covered enough distance while doing so. Specifically, the
+gesture accumulates the downward distance traveled across
+consecutive samples whose instantaneous velocity exceeds a
+threshold expressed in cell-units per second; any sample below
+threshold (including upward motion or a steady finger) resets the
+accumulator to zero. The drop fires once the accumulated fast
+travel reaches a minimum distance, also expressed in cell-units
+so it scales with cell size.
+
+This two-part check filters out both slow drags (never crosses
+the velocity threshold) and short jolts (crosses the threshold
+but for too small a distance to be a deliberate flick).
+
+Starting values: **8 cells/second** for the velocity threshold
+and **0.5 cells** for the minimum sustained distance. Both
+should be tuned by feel.
 
 A drop may follow a horizontal drag in the same gesture: if the
 finger is mid-drag and then accelerates downward past the
-threshold, the pair drops at its current column.
+threshold for long enough, the pair drops at its current column.
 
 #### Direction lock
 

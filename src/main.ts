@@ -93,7 +93,7 @@ async function main(): Promise<void> {
     previewRenderer.resize(cellSize);
   });
   const keyboard = attachKeyboard(store);
-  attachTouch(store, layout, playfieldEl);
+  const touch = attachTouch(store, layout, playfieldEl);
 
   function restart(): void {
     driver.reset();
@@ -149,6 +149,7 @@ async function main(): Promise<void> {
   function frame(now: number): void {
     driver.tick(now);
     keyboard.tick();
+    touch.tick();
     renderer.draw(now);
     previewRenderer.draw(now);
     const snapshot = store.getSnapshot();

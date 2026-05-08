@@ -8,9 +8,14 @@
 //
 // Cell size and the active piece's anchor column are read at
 // touchstart. The drag is relative: the pair starts at its current
-// column at touch-down and snaps to integer columns from there. Shifts
-// are dispatched only as the snap target changes, so a steady finger
-// produces no inputs.
+// column at touch-down and snaps to integer columns from there.
+//
+// Shifts are rate-limited via backpressure: touchmove only updates the
+// gesture's target column, and `tick()` (called once per frame from
+// main.ts) dispatches at most one shift when the input/step pipeline
+// is idle. This keeps the on-screen pair from running ahead of the
+// finger and ensures lifting mid-sweep stops the pair where it is, not
+// where the finger reached.
 //
 // All inputs flow through `store.dispatch` using the same Input shape
 // as keyboard.ts.
@@ -19,11 +24,17 @@ import type { LayoutModule } from '../layout';
 import type { Store } from '../store';
 
 export type Touch = {
+  tick(): void;
   detach(): void;
 };
 
 const DEAD_ZONE_CELLS = 0.2;
 const DROP_VELOCITY_CELLS_PER_SEC = 8;
+// A drop fires only after the finger has traveled this far downward
+// while sustaining the velocity threshold. Filters out short jolts
+// (fast but tiny) and slow drags (long but lazy). See
+// docs/09-responsive-layout.md.
+const MIN_DROP_DISTANCE_CELLS = 0.5;
 const COLUMN_MIN = 0;
 const COLUMN_MAX = 6;
 
@@ -41,15 +52,21 @@ type Gesture = {
   // pair or solo item clamps at 6. Re-reading mid-drag would risk
   // racing with rotates queued by the keyboard layer.
   maxColumn: number;
-  // Tracks the column we have already steered to via dispatched
-  // shifts. We diff against this rather than the live snapshot so
-  // that buffered, not-yet-applied shifts don't get re-issued.
+  // Where the finger says the pair should be. Updated on every
+  // touchmove; consumed lazily by tick().
+  targetColumn: number;
+  // Column we have already dispatched a shift to. tick() compares
+  // this against targetColumn to decide whether to issue another
+  // shift, and only does so when the pipeline is idle.
   lastColumn: number;
   classification: Classification;
-  // Last sample for the instantaneous-velocity check that promotes a
-  // gesture to a drop.
+  // Last sample for the instantaneous-velocity check, plus the
+  // running tally of downward distance accumulated while sustaining
+  // the velocity threshold. The accumulator resets on any sample
+  // that falls below threshold, so brief jolts can't fire a drop.
   lastY: number;
   lastTime: number;
+  fastDownwardCells: number;
 };
 
 export function attachTouch(
@@ -78,10 +95,12 @@ export function attachTouch(
       cellSize: layout.get().cellSize,
       anchorColumn,
       maxColumn,
+      targetColumn: anchorColumn,
       lastColumn: anchorColumn,
       classification: 'unclassified',
       lastY: t.clientY,
       lastTime: e.timeStamp,
+      fastDownwardCells: 0,
     };
   }
 
@@ -108,19 +127,11 @@ export function attachTouch(
 
     if (gesture.classification === 'drag') {
       const offset = Math.round(dx / cell);
-      const target = clamp(
+      gesture.targetColumn = clamp(
         gesture.anchorColumn + offset,
         COLUMN_MIN,
         gesture.maxColumn,
       );
-      while (gesture.lastColumn < target) {
-        store.dispatch({ kind: 'shift', direction: 'right' });
-        gesture.lastColumn += 1;
-      }
-      while (gesture.lastColumn > target) {
-        store.dispatch({ kind: 'shift', direction: 'left' });
-        gesture.lastColumn -= 1;
-      }
     }
 
     if (gesture.classification !== 'unclassified') {
@@ -129,9 +140,14 @@ export function attachTouch(
         const dyRecent = t.clientY - gesture.lastY;
         const velocity = dyRecent / cell / (dt / 1000);
         if (velocity >= DROP_VELOCITY_CELLS_PER_SEC) {
-          store.dispatch({ kind: 'drop' });
-          gesture = null;
-          return;
+          gesture.fastDownwardCells += dyRecent / cell;
+          if (gesture.fastDownwardCells >= MIN_DROP_DISTANCE_CELLS) {
+            store.dispatch({ kind: 'drop' });
+            gesture = null;
+            return;
+          }
+        } else {
+          gesture.fastDownwardCells = 0;
         }
       }
     }
@@ -163,6 +179,25 @@ export function attachTouch(
   element.addEventListener('touchcancel', onTouchCancel, opts);
 
   return {
+    tick() {
+      // Backpressure: drip one shift per idle frame toward the
+      // gesture's target column. peekNextStep returns null only when
+      // both the input buffer and the step queue are empty, mirroring
+      // keyboard.ts's held-key repeat. The pair therefore can't run
+      // ahead of the finger, and lifting mid-sweep stops the pair at
+      // whatever has already been dispatched (touchend clears
+      // `gesture`).
+      if (gesture === null) return;
+      if (store.peekNextStep() !== null) return;
+      if (gesture.lastColumn === gesture.targetColumn) return;
+      if (gesture.lastColumn < gesture.targetColumn) {
+        store.dispatch({ kind: 'shift', direction: 'right' });
+        gesture.lastColumn += 1;
+      } else {
+        store.dispatch({ kind: 'shift', direction: 'left' });
+        gesture.lastColumn -= 1;
+      }
+    },
     detach() {
       element.removeEventListener('touchstart', onTouchStart);
       element.removeEventListener('touchmove', onTouchMove);
