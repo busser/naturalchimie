@@ -3,6 +3,56 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Made the cell size dynamic
+
+The fixed 48 px cell hardcoded in `main.ts` and `setupCanvas` meant
+the game rendered the same size on a phone and a 4K monitor. Replaced
+it with a viewport-derived cell while leaving the landscape DOM/CSS
+layout intact. The dual-mode flip and touch input come later, in
+their own phases.
+
+A new `src/layout.ts` module owns the math. The cell is `min(vw /
+7.4, (vh - safeTop - safeBottom) / 15.6)` per `09-responsive-
+layout.md`, with `vh` measured off a hidden probe element so it
+tracks `100svh` semantics. Using `innerHeight` would have silently
+re-flowed the layout the first time the mobile address bar hid and
+grew the visible area; the small-viewport unit pins it to the smaller
+value. The same probe carries `padding: env(safe-area-inset-*)` so
+the safe-area insets fall out of one `getComputedStyle` read. The
+module subscribes to `resize` and `orientationchange`, writes
+`--cell` and `data-layout` on the root, and notifies registered
+listeners.
+
+The two canvas renderers (`playfield` and `preview`) gained a
+`resize(cellSize)` method backed by a shared `applyCanvasSize` helper
+that rewrites the canvas pixel size for the new DPR + cell and re-
+applies the transform and image-smoothing flags those assignments
+reset. The method deliberately does not touch effect state or the
+fuse particle state, so a merge bloom or a descending dynamite keeps
+its timeline running across a viewport change.
+
+Particle constants were tuned at the original 48 px reference.
+Renamed them from `*_PX` to `*_CELLS`, pre-divided by the reference
+at the constant site, and multiplied by the live `cellSize` at use.
+At a 48 px cell the output is bit-identical to today's build; the
+only visible difference is on viewports where the cell is no longer
+48. `Effect.getCanvasShake` now takes `cellSize` so the detonator
+screen kick scales with the cell too.
+
+CSS for the landscape layout now sizes from `--cell`. The `.playfield`
+gets explicit `calc(var(--cell) * 7) × calc(var(--cell) * 12)` rather
+than picking up its dimensions from the canvas child, and `.sidebar`
+width is `calc(var(--cell) * 25 / 6)`, which reproduces the previous
+200 px exactly at the reference cell. A `--cell: 48px` fallback on
+`:root` keeps the first paint identical while `layout.ts` measures
+the viewport. Other surface dimensions (preview height, score font
+size, paddings, gaps) follow the same pattern.
+
+The cleaner of the two cell-unit patterns the plan called out was
+pre-dividing constants by the reference value: it leaves the use
+sites readable as `value * cellSize` instead of forcing
+`value * cellSize / 48` everywhere.
+
 ## 2026-05-06 — Revamped the detonator's animation
 
 The detonator's animation worked end-to-end after yesterday's pass
