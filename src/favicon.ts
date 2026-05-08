@@ -109,9 +109,15 @@ function paintAppleTouchIcon(sprites: SpriteAtlas): void {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, APPLE_TOUCH_ICON_SIZE, APPLE_TOUCH_ICON_SIZE);
 
+  // Vertically, the sprite extends above its cell by up to
+  // TOP_HEADROOM_CELLS (potion cork, apple stem). Shift the cell down
+  // so the headroom-plus-cell column is centered in the canvas, which
+  // keeps equal padding above the cork and below the cell.
   const cellSize = APPLE_TOUCH_ICON_SIZE * APPLE_TOUCH_ICON_CELL_FRACTION;
   const cellX = (APPLE_TOUCH_ICON_SIZE - cellSize) / 2;
-  const cellY = (APPLE_TOUCH_ICON_SIZE - cellSize) / 2;
+  const verticalPadding =
+    (APPLE_TOUCH_ICON_SIZE - cellSize * (1 + TOP_HEADROOM_CELLS)) / 2;
+  const cellY = verticalPadding + TOP_HEADROOM_CELLS * cellSize;
   drawSpriteAtCell(ctx, sprites.byTier[1], cellX, cellY, cellSize);
   link.href = canvas.toDataURL('image/png');
 }
