@@ -26,6 +26,11 @@ const TOP_HEADROOM_CELLS = 0.25;
 // transparent pixels over black, so the icon needs an opaque fill.
 const SKY_TOP = '#a8d8f0';
 const SKY_BOTTOM = '#80b8e0';
+// Fraction of the apple-touch-icon canvas occupied by the sprite cell.
+// The remaining space is split as padding so the sprite (including any
+// upward extrusion like the potion's cork) sits comfortably inside
+// iOS's rounded-corner mask.
+const APPLE_TOUCH_ICON_CELL_FRACTION = 0.6;
 
 export type Favicon = {
   update(state: State): void;
@@ -104,9 +109,9 @@ function paintAppleTouchIcon(sprites: SpriteAtlas): void {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, APPLE_TOUCH_ICON_SIZE, APPLE_TOUCH_ICON_SIZE);
 
-  const cellSize = APPLE_TOUCH_ICON_SIZE / (1 + TOP_HEADROOM_CELLS);
+  const cellSize = APPLE_TOUCH_ICON_SIZE * APPLE_TOUCH_ICON_CELL_FRACTION;
   const cellX = (APPLE_TOUCH_ICON_SIZE - cellSize) / 2;
-  const cellY = TOP_HEADROOM_CELLS * cellSize;
+  const cellY = (APPLE_TOUCH_ICON_SIZE - cellSize) / 2;
   drawSpriteAtCell(ctx, sprites.byTier[1], cellX, cellY, cellSize);
   link.href = canvas.toDataURL('image/png');
 }
