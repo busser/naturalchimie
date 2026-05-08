@@ -9,11 +9,11 @@ const EMPTY_BOARD: Board = Array.from({ length: 9 }, () =>
 );
 
 describe('computePool', () => {
-  it('returns {1, 2} on an empty board', () => {
-    expect(computePool(EMPTY_BOARD)).toEqual([1, 2]);
+  it('returns {1, 2, 3} on an empty board', () => {
+    expect(computePool(EMPTY_BOARD)).toEqual([1, 2, 3]);
   });
 
-  it('still returns {1, 2} when only tier-1 elements are on the board', () => {
+  it('still returns {1, 2, 3} when only tier-1 elements are on the board', () => {
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -23,7 +23,7 @@ describe('computePool', () => {
       . . . . . . .
       1 1 1 . . . .
     `);
-    expect(computePool(board)).toEqual([1, 2]);
+    expect(computePool(board)).toEqual([1, 2, 3]);
   });
 
   it('includes every tier up to the highest one on the board', () => {
@@ -90,33 +90,34 @@ describe('computePool', () => {
 });
 
 describe('samplePiece / pair generation', () => {
-  it('produces a pair on an empty board, regardless of seed', () => {
-    // Below the special-item threshold the kind roll is skipped, so
-    // every seed must produce a pair.
-    for (let seed = 0; seed < 20; seed++) {
-      const [piece] = samplePiece(EMPTY_BOARD, createRng(seed));
-      expect(piece.kind).toBe('pair');
-    }
-  });
-
-  it('only produces tier-1 or tier-2 elements on an empty board', () => {
+  it('only produces tier-1, tier-2, or tier-3 elements on an empty board', () => {
     let rng: Rng = createRng(7);
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 200; i++) {
       const [piece, next] = samplePiece(EMPTY_BOARD, rng);
       rng = next;
-      expect(piece.kind).toBe('pair');
-      const pair = piece as Extract<Piece, { kind: 'pair' }>;
-      expect([1, 2]).toContain(pair.first);
-      expect([1, 2]).toContain(pair.second);
+      if (piece.kind !== 'pair') continue;
+      expect([1, 2, 3]).toContain(piece.first);
+      expect([1, 2, 3]).toContain(piece.second);
     }
   });
 
-  it('advances the RNG by exactly two draws when producing a pair', () => {
-    const rng = createRng(123);
-    const [, afterPair] = samplePiece(EMPTY_BOARD, rng);
-    const [, afterOne] = nextFloat(rng);
-    const [, afterTwo] = nextFloat(afterOne);
-    expect(afterPair).toEqual(afterTwo);
+  it('advances the RNG by exactly three draws when producing a pair', () => {
+    // Find a seed that produces a pair on the first sample, then
+    // confirm the returned RNG matches three nextFloat advances
+    // (1 kind roll + 2 tier rolls).
+    let rng: Rng = createRng(0);
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const [piece, next] = samplePiece(EMPTY_BOARD, rng);
+      if (piece.kind === 'pair') {
+        const [, a1] = nextFloat(rng);
+        const [, a2] = nextFloat(a1);
+        const [, a3] = nextFloat(a2);
+        expect(next).toEqual(a3);
+        return;
+      }
+      rng = next;
+    }
+    throw new Error('expected to draw a pair within 200 attempts');
   });
 
   it('is deterministic for a given seed', () => {
@@ -131,10 +132,11 @@ describe('samplePiece / pair generation', () => {
     );
   });
 
-  it('weighted distribution favors lower tiers in a wider pool', () => {
-    // With pool {1..5}, tier 1 has weight 5/15 ≈ 33% and tier 5 has
-    // weight 1/15 ≈ 7%. Across 5000 samples, tier 1 must outnumber
-    // tier 5 by a wide margin.
+  it('matches the NC2 weight table at pool {1..5}', () => {
+    // Weights [18, 18, 18, 18, 12], sum = 84. Bottom four tiers
+    // should each be ~21.4%, tier 5 ~14.3%. Across 10000 pair draws
+    // (20000 element samples) the bottom four tiers must dominate
+    // tier 5 and be roughly equal to each other.
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -146,20 +148,27 @@ describe('samplePiece / pair generation', () => {
     `);
     const counts = new Map<Tier, number>();
     let rng: Rng = createRng(2024);
-    for (let i = 0; i < 5000; i++) {
+    for (let i = 0; i < 10000; i++) {
       const [piece, next] = samplePiece(board, rng);
       rng = next;
-      const pair = piece as Extract<Piece, { kind: 'pair' }>;
-      counts.set(pair.first, (counts.get(pair.first) ?? 0) + 1);
-      counts.set(pair.second, (counts.get(pair.second) ?? 0) + 1);
+      if (piece.kind !== 'pair') continue;
+      counts.set(piece.first, (counts.get(piece.first) ?? 0) + 1);
+      counts.set(piece.second, (counts.get(piece.second) ?? 0) + 1);
     }
-    const tier1 = counts.get(1) ?? 0;
-    const tier5 = counts.get(5) ?? 0;
-    expect(tier1).toBeGreaterThan(tier5 * 3);
-    // All five tiers must appear at least once.
+    const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
     for (const t of [1, 2, 3, 4, 5] as const) {
       expect(counts.get(t)).toBeGreaterThan(0);
     }
+    // Bottom four tiers all in [18%, 25%] (expected 21.4%).
+    for (const t of [1, 2, 3, 4] as const) {
+      const share = (counts.get(t) ?? 0) / total;
+      expect(share).toBeGreaterThan(0.18);
+      expect(share).toBeLessThan(0.25);
+    }
+    // Tier 5 in [11%, 17%] (expected 14.3%).
+    const tier5Share = (counts.get(5) ?? 0) / total;
+    expect(tier5Share).toBeGreaterThan(0.11);
+    expect(tier5Share).toBeLessThan(0.17);
   });
 
   it('never produces tier 12 even when a gold nugget is on the board', () => {
@@ -184,23 +193,11 @@ describe('samplePiece / pair generation', () => {
 });
 
 describe('samplePiece / special items', () => {
-  it('does not roll for a special item below the 20-cell threshold', () => {
-    // 19 occupied cells: even if we set a contrived seed where the
-    // first roll would land in the dynamite band, the threshold means
-    // we never roll, and the result is always a pair.
-    const board = boardWithOccupiedCount(19);
-    for (let seed = 0; seed < 50; seed++) {
-      const [piece] = samplePiece(board, createRng(seed));
-      expect(piece.kind).toBe('pair');
-    }
-  });
-
-  it('can produce a dynamite when the board is sufficiently full', () => {
-    const board = boardWithOccupiedCount(25);
+  it('can produce a special item on an empty board (no fill gate)', () => {
     const kinds = new Set<Piece['kind']>();
     let rng: Rng = createRng(1);
-    for (let i = 0; i < 2000 && kinds.size < 3; i++) {
-      const [piece, next] = samplePiece(board, rng);
+    for (let i = 0; i < 5000 && kinds.size < 3; i++) {
+      const [piece, next] = samplePiece(EMPTY_BOARD, rng);
       rng = next;
       kinds.add(piece.kind);
     }
@@ -209,46 +206,45 @@ describe('samplePiece / special items', () => {
     expect(kinds.has('detonator')).toBe(true);
   });
 
-  it('produces special items at roughly the spec rate when eligible', () => {
-    const board = boardWithOccupiedCount(25);
+  it('produces special items at roughly the spec rate', () => {
     let dynamite = 0;
     let detonator = 0;
     let pair = 0;
     let rng: Rng = createRng(2026);
-    const trials = 20000;
+    const trials = 30000;
     for (let i = 0; i < trials; i++) {
-      const [piece, next] = samplePiece(board, rng);
+      const [piece, next] = samplePiece(EMPTY_BOARD, rng);
       rng = next;
       if (piece.kind === 'dynamite') dynamite++;
       else if (piece.kind === 'detonator') detonator++;
       else pair++;
     }
-    // Spec values: dynamite 0.03, detonator 0.03, pair 0.94. Wide
-    // tolerance so the test isn't seed-fragile, but tight enough to
-    // catch a swapped or dropped branch.
-    expect(dynamite / trials).toBeGreaterThan(0.02);
-    expect(dynamite / trials).toBeLessThan(0.04);
-    expect(detonator / trials).toBeGreaterThan(0.02);
-    expect(detonator / trials).toBeLessThan(0.04);
-    expect(pair / trials).toBeGreaterThan(0.92);
+    // Spec values: dynamite 0.025, detonator 0.025, pair 0.95.
+    // Wide tolerance so the test isn't seed-fragile, but tight enough
+    // to catch a swapped or dropped branch.
+    expect(dynamite / trials).toBeGreaterThan(0.015);
+    expect(dynamite / trials).toBeLessThan(0.035);
+    expect(detonator / trials).toBeGreaterThan(0.015);
+    expect(detonator / trials).toBeLessThan(0.035);
+    expect(pair / trials).toBeGreaterThan(0.93);
   });
 
-  it('advances the RNG by one draw when producing a special item', () => {
-    // Find a seed that produces a special item on the first draw of a
-    // sufficiently full board, then confirm the returned RNG is the
-    // one-step advance of the input.
-    const board = boardWithOccupiedCount(25);
+  it('advances the RNG by two draws when producing a special item', () => {
+    // Find a seed that produces a special item on the first sample,
+    // then confirm the returned RNG matches two nextFloat advances
+    // (1 kind roll + 1 dynamite-vs-detonator roll).
     let rng: Rng = createRng(0);
-    for (let attempt = 0; attempt < 200; attempt++) {
-      const [piece, next] = samplePiece(board, rng);
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const [piece, next] = samplePiece(EMPTY_BOARD, rng);
       if (piece.kind === 'dynamite' || piece.kind === 'detonator') {
-        const [, afterOne] = nextFloat(rng);
-        expect(next).toEqual(afterOne);
+        const [, a1] = nextFloat(rng);
+        const [, a2] = nextFloat(a1);
+        expect(next).toEqual(a2);
         return;
       }
       rng = next;
     }
-    throw new Error('expected to draw a special item within 200 attempts');
+    throw new Error('expected to draw a special item within 500 attempts');
   });
 });
 
@@ -261,20 +257,4 @@ function drawSequence(board: Board, rng: Rng, n: number): Piece[] {
     current = next;
   }
   return out;
-}
-
-// Builds a 9-row board with `count` occupied playfield cells, all
-// tier 1 (so the pool stays {1, 2} and pair draws are unaffected).
-function boardWithOccupiedCount(count: number): Board {
-  const rows: Cell[][] = Array.from({ length: 9 }, () =>
-    Array.from({ length: 7 }, (): Cell => ({ kind: 'empty' })),
-  );
-  let placed = 0;
-  for (let r = 0; r < 7 && placed < count; r++) {
-    for (let c = 0; c < 7 && placed < count; c++) {
-      rows[r][c] = { kind: 'element', tier: 1 };
-      placed++;
-    }
-  }
-  return rows;
 }

@@ -3,6 +3,56 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-09 - Aligned the random-pair generator with NC2
+
+Continued porting from the *Naturalchimie 2* source, this time the
+random-pair generator. The structure matched ours already: a kind
+roll first (pair vs. special item), then a weighted draw over the
+unlocked tiers. Four things changed.
+
+The kind roll no longer waits for the playfield to fill up. The
+old 20-cell gate is gone, so a dynamite or detonator can roll on
+any draw, including the very first one of a round. NC2 has no
+such gate and it adds a small thrill to early-game draws without
+costing much, since specials are still rare.
+
+Per-tier weights are now a static table copied from NC2 (`fla/botGame/src/BotGame.hx:182`):
+`[18, 18, 18, 18, 12, 8, 7, 5, 4, 1, 1, 0]`. The four lowest tiers
+are tied at 18, then weights taper sharply. The previous linear
+formula `weight(t) = max - t + 1` gave a smooth left-skewed curve
+that overweighted tier 1 in early pools (50% at pool size 3) and
+made tier 11 too common at the deep pool (1.5%). The static table
+flattens early-game pools (33% per tier at pool size 3) and makes
+the chain's top elements rarer (~0.9% each for tiers 10 and 11).
+Tier 12 (gold) sits in the table at weight 0; the pool clamp
+already excludes it, but keeping it in the table makes the "all
+twelve elements, gold never spawns" rule visible at a glance.
+
+Special items now combine to 5% per draw. The kind roll picks a
+special with probability 0.05; a second weighted draw splits it
+between dynamite and detonator with equal weights, giving 2.5%
+each. NC2 itself runs closer to 1% combined, but specials are
+more central to NC1 Classic's feel since there are only two of
+them, so we kept a higher rate. The two-step structure (one
+parameter for "how often any special at all", another for the
+mix between specials) makes the two knobs independently
+tweakable.
+
+The pool floor moved from 2 to 3. An empty board now yields pool
+`{1, 2, 3}` instead of `{1, 2}`. NC2's `level` counter starts at
+3 (`fla/game/src/mode/GameMode.hx:57`); we kept our pool-follows-
+the-board rule but matched the floor. Combined with the flat top
+of the weight table, the very first draws of a round are now a
+uniform pick across tiers 1, 2, and 3.
+
+Touched files: `src/core/spawn.ts`, `src/core/spawn.test.ts`,
+three pool-floor assertions in `src/core/apply.test.ts`,
+`docs/03-spawning.md` (rewrote the distribution and special-item
+sections; updated the pseudocode), and one stale line in
+`docs/02-elements.md`. The findings document at `findings.md`
+captures the NC2 source-code references the new constants come
+from.
+
 ## 2026-05-09 - Ported NC2's cascade chain bonus
 
 Reading the *Naturalchimie 2* source from Motion Twin's

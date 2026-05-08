@@ -352,12 +352,12 @@ describe('applyInput / drop', () => {
       first: 1,
       second: 1,
     });
-    // With pool {1, 2} on the post-land board both halves of the new
-    // preview must be tier-1 or tier-2.
+    // With pool {1, 2, 3} on the post-land board both halves of the
+    // new preview must be tier-1, tier-2, or tier-3.
     expect(next.preview.kind).toBe('pair');
     const newPreview = next.preview as Extract<Piece, { kind: 'pair' }>;
-    expect([1, 2]).toContain(newPreview.first);
-    expect([1, 2]).toContain(newPreview.second);
+    expect([1, 2, 3]).toContain(newPreview.first);
+    expect([1, 2, 3]).toContain(newPreview.second);
   });
 
   it('emits a post-land snapshot with no active piece, then a spawn snapshot', () => {
@@ -506,8 +506,8 @@ describe('applyInput / drop', () => {
   it('matches acceptance test 4.5 — destroying the highest tier shrinks the spawn pool', () => {
     // Column 3 holds tiers 1/2/3/4/5 (lone tier-5 sets the pool to
     // {1..5}). Dropping a dynamite at column 3 destroys all of them,
-    // including the tier-5. The post-blast board has no tier-5
-    // anywhere, so the next preview is drawn against pool {1..2}.
+    // including the tier-5. The post-blast board is empty, so the
+    // next preview is drawn against pool {1..3} (the floor).
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -521,8 +521,8 @@ describe('applyInput / drop', () => {
     const [next] = applyInput(state, { kind: 'drop' }, RNG);
     expect(next.preview.kind).toBe('pair');
     const newPreview = next.preview as Extract<Piece, { kind: 'pair' }>;
-    expect([1, 2]).toContain(newPreview.first);
-    expect([1, 2]).toContain(newPreview.second);
+    expect([1, 2, 3]).toContain(newPreview.first);
+    expect([1, 2, 3]).toContain(newPreview.second);
   });
 
   it('promotes the preview after dropping a solo item', () => {
@@ -1194,7 +1194,8 @@ describe('applyInput / drop / detonator', () => {
     // detonator is the topmost cell of column 3, with the lone
     // tier-5 next door at (row 1, col 4) — inside the blast's 3×3.
     // Dropping a [1/1] horizontal pair triggers the detonator and
-    // destroys the tier-5, dropping the highest surviving tier to 2.
+    // destroys the tier-5. With the highest surviving tier at 2, the
+    // pool clamps back to its floor of {1..3}.
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -1208,8 +1209,8 @@ describe('applyInput / drop / detonator', () => {
     const [next] = applyInput(state, { kind: 'drop' }, RNG);
     expect(next.preview.kind).toBe('pair');
     const newPreview = next.preview as Extract<Piece, { kind: 'pair' }>;
-    expect([1, 2]).toContain(newPreview.first);
-    expect([1, 2]).toContain(newPreview.second);
+    expect([1, 2, 3]).toContain(newPreview.first);
+    expect([1, 2, 3]).toContain(newPreview.second);
   });
 
   it('updates the score on the detonate step when nothing reacts afterward', () => {

@@ -308,8 +308,8 @@ to be triggered).
 
 | Special item | Reactive | Spawn condition (see `03-spawning.md`) |
 |---|---|---|
-| Dynamite | no | rare; only when board is sufficiently full |
-| Detonator | no | rare; only when board is sufficiently full |
+| Dynamite | no | rare; can roll on any board, including empty |
+| Detonator | no | rare; can roll on any board, including empty |
 
 ## Visual size and footprint
 
