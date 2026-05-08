@@ -13,10 +13,14 @@ import { drawSpriteAtCell } from './assets/sprite-renderer';
 import type { State, Tier } from './core/state';
 
 const FAVICON_SIZE = 64;
-// Apple's recommended apple-touch-icon size (covers iPhone @3x). iOS
-// captures this once when the user adds the page to the home screen,
-// so it's painted a single time at startup with tier 1 — no climbing.
-const APPLE_TOUCH_ICON_SIZE = 180;
+// 2x Apple's recommended 180x180 (iPhone @3x). The sprite source PNG
+// is large (1024+ px wide), and downscaling it directly to 180 leaves
+// visible aliasing on the bottle outline. Rendering at 360 gives the
+// canvas a less aggressive downscale; iOS resamples to display size
+// with its own (high-quality) scaler. iOS captures the icon once when
+// the user adds the page to the home screen and doesn't refresh after,
+// so this is painted a single time at startup with tier 1.
+const APPLE_TOUCH_ICON_SIZE = 360;
 // Headroom above the cell footprint for sprite parts that extrude
 // upward (potion necks, apple stems). Bottom-anchored sprites need no
 // equivalent below, so the cell sits at the bottom of the canvas.
@@ -102,6 +106,9 @@ function paintAppleTouchIcon(sprites: SpriteAtlas): void {
   if (ctx === null) {
     throw new Error('paintAppleTouchIcon: 2D context unavailable');
   }
+  // Default is 'low' (bilinear). 'high' picks a better filter for the
+  // significant downscale from the 1024+ px source sprite.
+  ctx.imageSmoothingQuality = 'high';
 
   const gradient = ctx.createLinearGradient(0, 0, 0, APPLE_TOUCH_ICON_SIZE);
   gradient.addColorStop(0, SKY_TOP);
