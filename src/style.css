@@ -171,6 +171,10 @@ body {
 
 .game-over.is-visible {
   opacity: 1;
+  /* Capture taps once visible so the double-tap detector receives
+     touchend events. While hidden, `pointer-events: none` (the base
+     rule) keeps the overlay click-through. */
+  pointer-events: auto;
 }
 
 .game-over__panel {
@@ -203,4 +207,9 @@ body {
 .game-over__hint {
   font-size: 14px;
   opacity: 0.85;
+}
+
+:root[data-layout='landscape'] .game-over__hint-portrait,
+:root[data-layout='portrait'] .game-over__hint-landscape {
+  display: none;
 }

@@ -81,18 +81,51 @@ async function main(): Promise<void> {
   const keyboard = attachKeyboard(store);
   attachTouch(store, layout, playfieldEl);
 
+  function restart(): void {
+    driver.reset();
+    store.restart(Date.now());
+    hideGameOver();
+  }
+
   window.addEventListener('keydown', (e) => {
     if (e.key !== ' ' && e.key !== 'Spacebar') return;
     if (gameOverShown) {
       e.preventDefault();
-      driver.reset();
-      store.restart(Date.now());
-      hideGameOver();
+      restart();
       return;
     }
     if (import.meta.env.DEV) {
       e.preventDefault();
       store.randomizePreview();
+    }
+  });
+
+  // Double-tap on the game-over overlay restarts, mirroring the SPACE
+  // branch above. Two taps within 400 ms commit; the first tap arms the
+  // window. stopPropagation keeps these touches out of the playfield's
+  // touch handler so they don't open a phantom gesture under the
+  // overlay (touchstart would otherwise bubble to .playfield).
+  const DOUBLE_TAP_WINDOW_MS = 400;
+  let lastTapTime = -Infinity;
+  gameOverEl.addEventListener('touchstart', (e) => {
+    e.stopPropagation();
+  });
+  gameOverEl.addEventListener('touchmove', (e) => {
+    e.stopPropagation();
+  });
+  gameOverEl.addEventListener('touchcancel', (e) => {
+    e.stopPropagation();
+  });
+  gameOverEl.addEventListener('touchend', (e) => {
+    e.stopPropagation();
+    if (!gameOverShown) return;
+    e.preventDefault();
+    const now = e.timeStamp;
+    if (now - lastTapTime <= DOUBLE_TAP_WINDOW_MS) {
+      lastTapTime = -Infinity;
+      restart();
+    } else {
+      lastTapTime = now;
     }
   });
 
