@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { applyInput } from './apply';
 import { parseBoard } from './board-text';
 import { createRng } from './rng';
+import { computeBoardSum } from './score';
 import type {
   ActivePiece,
   Board,
@@ -18,8 +19,16 @@ const EMPTY_BOARD: Board = Array.from({ length: 9 }, () =>
 const DUMMY_PREVIEW: Piece = { kind: 'pair', first: 1, second: 1 };
 const RNG = createRng(42);
 
+// score is `comboScore + boardSum(board)`; comboScore defaults to 0
+// so the helper builds a State whose `score` matches its board.
 function makeState(active: ActivePiece | null, board: Board = EMPTY_BOARD): State {
-  return { board, active, preview: DUMMY_PREVIEW, score: 0 };
+  return {
+    board,
+    active,
+    preview: DUMMY_PREVIEW,
+    score: computeBoardSum(board),
+    comboScore: 0,
+  };
 }
 
 function pair(
@@ -536,9 +545,10 @@ describe('applyInput / drop / score', () => {
     const state = makeState(pair(3, 'horizontal', 1, 2));
     const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
     expect(next.score).toBe(4);
-    // The pair-land snapshot is the first commit on a stable board,
-    // so the score updates there. The spawn snapshot carries it
-    // forward unchanged.
+    expect(next.comboScore).toBe(0);
+    // No reactions, so the cascade adds no chain bonus. The
+    // pair-land snapshot already carries the live post-land score,
+    // and the spawn snapshot carries it forward.
     expect(steps[0].snapshot.score).toBe(4);
     expect(steps[1].snapshot.score).toBe(4);
   });
@@ -589,11 +599,13 @@ describe('applyInput / drop / cascade integration', () => {
     ]);
   });
 
-  it('holds the score on pair-land while a cascade is in flight, then commits it on the last cascade step', () => {
-    // Acceptance test 2.4: a two-step cascade settling on a single
-    // tier-3 (score = 9). Drop is at spec column 3 (code column 2),
-    // which lands the bottom tier-1 onto the floor next to an
-    // existing tier-1 row, triggering the cascade.
+  it('updates the score on every step during a cascade and settles the chain bonus on the last cascade step', () => {
+    // Acceptance test 2.4: a two-merge cascade settling on a single
+    // tier-3 (board sum = 9). The vertical pair lands its bottom
+    // tier-1 next to an existing tier-1 row at row 0, so the post-
+    // land board has a 4-cell tier-1 group that merges to tier-2,
+    // gravity drops two stranded tier-2s to the floor, and the
+    // resulting tier-2 row of 3 merges to tier-3.
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -604,8 +616,7 @@ describe('applyInput / drop / cascade integration', () => {
       . 1 . 1 . . .
     `);
     const state = makeState(pair(2, 'vertical', 1, 2), board);
-    const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
-    // Steps: pair-land, merge1, gravity, merge2, spawn.
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
     expect(steps.map((s) => s.event.kind)).toEqual([
       'pair-land',
       'merge',
@@ -613,20 +624,81 @@ describe('applyInput / drop / cascade integration', () => {
       'merge',
       'spawn',
     ]);
-    const priorScore = state.score;
-    expect(steps[0].snapshot.score).toBe(priorScore);
-    expect(steps[1].snapshot.score).toBe(priorScore);
-    expect(steps[2].snapshot.score).toBe(priorScore);
-    // Last cascade step is the moment the board becomes stable, so
-    // the new score lands here.
-    expect(steps[3].snapshot.score).toBe(9);
-    expect(steps[4].snapshot.score).toBe(9);
+    // The displayed score updates at every step. Pre-drop board sum
+    // was 6 (3 × tier-1 + 1 × tier-2); after the pair lands the
+    // playfield holds 4 × tier-1 + 2 × tier-2 = 10. The first merge
+    // turns 4 × tier-1 into 1 × tier-2, leaving 3 × tier-2 = 9, and
+    // gravity preserves the sum. The final tier-3 also scores 9.
+    expect(steps[0].snapshot.score).toBe(10); // pair-land
+    expect(steps[1].snapshot.score).toBe(9); // first merge
+    expect(steps[2].snapshot.score).toBe(9); // gravity
+    // Two merges = one chain link beyond the first → +10 bonus,
+    // settled on the final cascade step.
+    expect(steps[3].snapshot.score).toBe(19); // second merge (settled)
+    expect(steps[3].snapshot.comboScore).toBe(10);
+    expect(steps[4].snapshot.score).toBe(19); // spawn
+    expect(next.comboScore).toBe(10);
+    // comboScore on the in-flight steps stays at the prior value.
+    expect(steps[0].snapshot.comboScore).toBe(0);
+    expect(steps[1].snapshot.comboScore).toBe(0);
+    expect(steps[2].snapshot.comboScore).toBe(0);
   });
 
   it('emits no merge or gravity step when nothing reacts', () => {
     const state = makeState(pair(3, 'horizontal', 1, 2));
     const [, steps] = applyInput(state, { kind: 'drop' }, RNG);
     expect(steps.map((s) => s.event.kind)).toEqual(['pair-land', 'spawn']);
+  });
+
+  it('awards no chain bonus for a single merge', () => {
+    // One merge, no further reactions → chainLinks = 1 → bonus = 0.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . 1 1 . . . .
+    `);
+    const state = makeState(pair(3, 'horizontal', 1, 5), board);
+    const [next] = applyInput(state, { kind: 'drop' }, RNG);
+    // Pair lands tier-1 at (0, 3) and tier-5 at (0, 4). The tier-1
+    // group at (0, 1)..(0, 3) merges to tier-2 at (0, 1). Final
+    // board sum = 3 + 81 = 84; comboScore stays 0.
+    expect(next.score).toBe(84);
+    expect(next.comboScore).toBe(0);
+  });
+
+  it('adds COMBO_BONUS for each chain link beyond the first', () => {
+    // Three-merge cascade. Column 0 stacks 1, 2, 2, 3, 3 from the
+    // floor up; the floor row also has a tier-1 at column 1. Drop a
+    // horizontal [1/1] pair at column 2 so both halves land at row 0,
+    // producing the chain:
+    //   merge 1 — tier-1 quartet at row 0 cols 0..3 → tier-2 at (0,0).
+    //   merge 2 — tier-2 trio at col 0 rows 0..2 → tier-3 at (0,0).
+    //   gravity drops the col-0 tier-3s at rows 3..4 down to rows 1..2.
+    //   merge 3 — tier-3 trio at col 0 rows 0..2 → tier-4 at (0,0).
+    // Three chain links → +20 bonus. Final board: a single tier-4 at
+    // (0, 0) on an otherwise empty playfield.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      3 . . . . . .
+      3 . . . . . .
+      2 . . . . . .
+      2 . . . . . .
+      1 1 . . . . .
+    `);
+    const state = makeState(pair(2, 'horizontal', 1, 1), board);
+    const [next, steps] = applyInput(state, { kind: 'drop' }, RNG);
+    const merges = steps.filter((s) => s.event.kind === 'merge').length;
+    expect(merges).toBe(3);
+    expect(next.comboScore).toBe(20);
+    // Final board sum = 3^(4-1) = 27. Total score = comboScore + sum.
+    expect(next.score).toBe(20 + 27);
   });
 
   it('lets the cascade rescue an overflow landing from a game-over', () => {

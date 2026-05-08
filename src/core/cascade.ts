@@ -3,12 +3,13 @@
 // step list. Pure — no RNG, no time, no dependency on the active
 // piece. The caller (apply.ts) is responsible for stitching the
 // returned steps between the pair-land step and the spawn step, and
-// for rewriting the final stable-board step's snapshot to carry the
-// recomputed score.
+// for settling `comboScore` on the final stable-board step using the
+// chain-link count returned here.
 //
 // Spec: docs/01-gameplay-rules.md "Reactions", "Gravity", "Cascade".
 // Tier 12 is inert; size-3+ components of any tier 1–11 react.
 
+import { computeBoardSum } from './score';
 import type {
   Board,
   Cell,
@@ -31,42 +32,53 @@ const REACTIVE_TIER_MAX = 11;
 // gravity (skipping the gravity step entirely when nothing moved).
 // Loop until no reacting groups exist.
 //
-// `priorState` supplies the score, preview, and any other fields that
-// the cascade itself does not change. Each emitted snapshot carries
-// `priorState.score`; the score recompute happens at the apply.ts
-// boundary on the final stable board.
+// `priorState` supplies the comboScore, preview, and other fields the
+// cascade itself does not change. Each emitted snapshot's `score` is
+// the live `priorState.comboScore + computeBoardSum(currentBoard)`;
+// the bonus from this cascade settles into `comboScore` later, in the
+// apply.ts boundary, by reading `chainLinks` (the count of merge
+// steps emitted here). Snapshots produced during the cascade carry
+// the prior `comboScore` because the bonus has not been awarded yet.
 export function runCascade(
   board: Board,
   priorState: State,
-): { board: Board; steps: Step[] } {
+): { board: Board; steps: Step[]; chainLinks: number } {
   let current = board;
   const steps: Step[] = [];
+  let chainLinks = 0;
+  const snapshotFor = (next: Board): State => ({
+    ...priorState,
+    board: next,
+    active: null,
+    score: priorState.comboScore + computeBoardSum(next),
+  });
   const initial = applyGravity(current);
   if (initial.movements.length > 0) {
     current = initial.board;
     steps.push({
       event: { kind: 'gravity', movements: initial.movements },
-      snapshot: { ...priorState, board: current, active: null },
+      snapshot: snapshotFor(current),
     });
   }
   while (true) {
     const groups = findReactingGroups(current);
     if (groups.length === 0) break;
     current = resolveReactions(current, groups);
+    chainLinks++;
     steps.push({
       event: { kind: 'merge', groups },
-      snapshot: { ...priorState, board: current, active: null },
+      snapshot: snapshotFor(current),
     });
     const { board: afterGravity, movements } = applyGravity(current);
     if (movements.length > 0) {
       current = afterGravity;
       steps.push({
         event: { kind: 'gravity', movements },
-        snapshot: { ...priorState, board: current, active: null },
+        snapshot: snapshotFor(current),
       });
     }
   }
-  return { board: current, steps };
+  return { board: current, steps, chainLinks };
 }
 
 // Every connected component of size ≥ 3 of a single reactive tier.

@@ -4,7 +4,7 @@
 // fixpoint) → lose check → score recompute → spawn.
 
 import { runCascade } from './cascade';
-import { computeScore } from './score';
+import { computeBoardSum, computeChainBonus } from './score';
 import { pieceToActive, samplePiece } from './spawn';
 import type {
   ActivePiece,
@@ -115,10 +115,11 @@ function drop(
   rng: Rng,
 ): [State, Step[], Rng] {
   const { board: postLandBoard, landSteps } = landActive(state, active);
-  const { board: stableBoard, steps: cascadeSteps } = runCascade(
-    postLandBoard,
-    state,
-  );
+  const {
+    board: stableBoard,
+    steps: cascadeSteps,
+    chainLinks,
+  } = runCascade(postLandBoard, state);
 
   // Lose check runs on the post-cascade stable board: a cascade can
   // clear elements out of the overflow zone, so a row-7 cell right
@@ -126,28 +127,45 @@ function drop(
   // RNG stays put) and no piece is promoted — the game-over step's
   // snapshot mirrors the stable state. Score does not update on
   // game-over per the spec ("if the round did not end, the score is
-  // recomputed"); every emitted snapshot holds the prior score.
+  // recomputed"); every emitted snapshot — including the live ones
+  // landSteps/cascadeSteps were built with — gets reverted to the
+  // prior score and prior comboScore.
   if (isLost(stableBoard)) {
     const stableState: State = { ...state, board: stableBoard, active: null };
+    const frozenSteps = [...landSteps, ...cascadeSteps].map((step) => ({
+      ...step,
+      snapshot: {
+        ...step.snapshot,
+        score: state.score,
+        comboScore: state.comboScore,
+      },
+    }));
     return [
       stableState,
       [
-        ...landSteps,
-        ...cascadeSteps,
+        ...frozenSteps,
         { event: { kind: 'game-over' }, snapshot: stableState },
       ],
       rng,
     ];
   }
 
-  // Stable-board score: every step before the board settles carries
-  // the prior score; the last step in the chain is the first to land
-  // on a stable board, so its snapshot gets the recomputed score.
-  // That step is the last cascade step when the cascade ran,
-  // otherwise the last land step (the dynamite-blast for dynamite,
-  // the lone land step for pairs and detonators).
-  const newScore = computeScore(stableBoard);
-  const stepsBeforeSpawn = stitchScore(landSteps, cascadeSteps, newScore);
+  // The cascade bonus settles on the final stable-board step. Every
+  // step before that already carries a live `score = comboScore +
+  // boardSum(stepBoard)` with the prior comboScore (built in
+  // landActive and runCascade); the last step replaces both fields
+  // with the new comboScore (= prior + chain bonus) and the matching
+  // score. The "last step" is the final cascade step when the
+  // cascade ran, otherwise the final land step (the dynamite-blast
+  // for dynamite, the lone land step for pairs and detonators).
+  const newComboScore = state.comboScore + computeChainBonus(chainLinks);
+  const newScore = newComboScore + computeBoardSum(stableBoard);
+  const stepsBeforeSpawn = settleFinalStep(
+    landSteps,
+    cascadeSteps,
+    newComboScore,
+    newScore,
+  );
 
   // Preview slides to active and a fresh piece is drawn for the
   // preview, against the post-cascade board (03-spawning.md
@@ -158,14 +176,16 @@ function drop(
     active: pieceToActive(state.preview),
     preview: newPreview,
     score: newScore,
+    comboScore: newComboScore,
   };
   const spawnStep: Step = { event: { kind: 'spawn' }, snapshot: afterSpawn };
   return [afterSpawn, [...stepsBeforeSpawn, spawnStep], nextRng];
 }
 
-function stitchScore(
+function settleFinalStep(
   landSteps: readonly Step[],
   cascadeSteps: readonly Step[],
+  newComboScore: number,
   newScore: number,
 ): Step[] {
   const all = [...landSteps, ...cascadeSteps];
@@ -173,7 +193,14 @@ function stitchScore(
   const lastIndex = all.length - 1;
   return all.map((step, index) =>
     index === lastIndex
-      ? { ...step, snapshot: { ...step.snapshot, score: newScore } }
+      ? {
+          ...step,
+          snapshot: {
+            ...step.snapshot,
+            score: newScore,
+            comboScore: newComboScore,
+          },
+        }
       : step,
   );
 }
@@ -189,6 +216,21 @@ function isLost(board: Board): boolean {
 
 type LandResult = { board: Board; landSteps: Step[] };
 
+// Snapshot helper for land/detonate steps. Each snapshot's `score` is
+// the live `state.comboScore + boardSum(snapshotBoard)`, matching the
+// rule that the displayed score updates at every step. The cascade
+// bonus has not been awarded yet, so `comboScore` stays at the prior
+// value here; the final cascade-or-land step gets bumped in
+// `settleFinalStep`.
+function liveSnapshot(state: State, board: Board): State {
+  return {
+    ...state,
+    board,
+    active: null,
+    score: state.comboScore + computeBoardSum(board),
+  };
+}
+
 function landActive(state: State, active: ActivePiece): LandResult {
   switch (active.kind) {
     case 'pair': {
@@ -196,10 +238,9 @@ function landActive(state: State, active: ActivePiece): LandResult {
         state.board,
         active,
       );
-      const snapshot: State = { ...state, board, active: null };
       const landStep: Step = {
         event: { kind: 'pair-land', firstLandingRow, secondLandingRow },
-        snapshot,
+        snapshot: liveSnapshot(state, board),
       };
       // A pair half triggers a detonator when it settles directly on
       // top of one. For a horizontal pair both columns are checked
@@ -227,10 +268,9 @@ function landActive(state: State, active: ActivePiece): LandResult {
       const { board, landingRow } = landSolo(state.board, active.column, {
         kind: 'detonator',
       });
-      const snapshot: State = { ...state, board, active: null };
       const landStep: Step = {
         event: { kind: 'solo-land', landingRow },
-        snapshot,
+        snapshot: liveSnapshot(state, board),
       };
       // Detonator-on-detonator: the existing detonator (one row below
       // the new one's landing cell) triggers, and its 3×3 blast clears
@@ -253,10 +293,9 @@ function landActive(state: State, active: ActivePiece): LandResult {
       // onto an unchanged board, then the dynamite-blast that clears
       // the column from row 0 up to and including landingRow.
       const landingRow = lowestEmptyRow(state.board, active.column);
-      const soloSnapshot: State = { ...state, active: null };
       const soloStep: Step = {
         event: { kind: 'solo-land', landingRow },
-        snapshot: soloSnapshot,
+        snapshot: liveSnapshot(state, state.board),
       };
       // Dynamite-on-detonator: the detonator triggers first and the
       // dynamite is destroyed before its fuse can light. No
@@ -277,11 +316,6 @@ function landActive(state: State, active: ActivePiece): LandResult {
         0,
         landingRow,
       );
-      const blastSnapshot: State = {
-        ...state,
-        board: blastBoard,
-        active: null,
-      };
       return {
         board: blastBoard,
         landSteps: [
@@ -292,7 +326,7 @@ function landActive(state: State, active: ActivePiece): LandResult {
               column: active.column,
               landingRow,
             },
-            snapshot: blastSnapshot,
+            snapshot: liveSnapshot(state, blastBoard),
           },
         ],
       };
@@ -344,7 +378,7 @@ function buildDetonateStep(
   );
   return {
     event: { kind: 'detonate', detonators: triggers, cleared },
-    snapshot: { ...priorState, board: next, active: null },
+    snapshot: liveSnapshot(priorState, next),
   };
 }
 

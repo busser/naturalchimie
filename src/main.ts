@@ -155,7 +155,18 @@ async function main(): Promise<void> {
     renderer.draw(now);
     previewRenderer.draw(now);
     const snapshot = store.getSnapshot();
-    if (snapshot.score !== lastScore) {
+    // The core's `score` updates live on every step's snapshot, but
+    // ticking the sidebar numeral that often is distracting. Only
+    // refresh the display once the play area has just stabilized —
+    // either the spawn step is animating in (the cascade just
+    // settled and `snapshot.score` is the post-cascade value), or
+    // the player already has control (initial state, idle between
+    // drops). On game-over `active` stays null and no spawn step is
+    // queued, so the sidebar holds the pre-drop value; the
+    // game-over modal shows the final score separately above.
+    const inFlight = driver.getInFlight(now);
+    const settling = inFlight !== null && inFlight.step.event.kind === 'spawn';
+    if (snapshot.score !== lastScore && (settling || snapshot.active !== null)) {
       scoreEl.textContent = String(snapshot.score);
       lastScore = snapshot.score;
     }

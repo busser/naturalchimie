@@ -862,22 +862,36 @@ stable post-cascade board.
 
 ## Section 6 — Score recomputation
 
-### 6.1 — Score reflects only stable board
+### 6.1 — Displayed score refreshes once per drop on settle
 
-The score should never be observable in an "intermediate" state.
-Implementations that update the displayed score during a cascade
-fail this test.
+The score on the sidebar should refresh in a single update at
+the moment the cascade settles — not visibly tick through
+pair-land, each merge, gravity, and detonations. (The state
+model updates `score` live on every snapshot; this test covers
+the rendered sidebar, not the state.)
 
-The test: instrument the implementation to expose the score value
-on every state change. Run a drop that causes a 3-step cascade.
-Verify the displayed score remains at its pre-drop value until the
-cascade fully stabilizes, then snaps to the new value in a single
-update.
+The test: instrument the renderer to record the displayed numeral
+on every animation frame. Run the two-merge cascade from
+acceptance test 2.4 (pre-drop board sum = 6, drop a vertical
+[1/2] at column 3). The displayed numeral should hold at the
+pre-drop value (6) throughout pair-land, both merges, and the
+gravity step, then snap to 19 the moment the cascade ends and
+the next piece begins sliding into the spawn area. Intermediate
+values from the live state model (10, 9, 9, 19 once it lands on
+the final cascade step) must never appear on screen.
 
-(This is a presentation test as much as a logic test, but it
-catches a common implementation bug.)
+For reference, the underlying state's `score` field on each step
+is:
 
-### 6.2 — Score formula
+| Step      | State `score` |
+|-----------|---------------|
+| pair-land | 10            |
+| merge 1   | 9             |
+| gravity   | 9             |
+| merge 2   | 19            |
+| spawn     | 19            |
+
+### 6.2 — Board-sum formula
 
 Construct a board with one of each tier 1–11 plus zero gold
 nuggets (any arrangement that does not trigger reactions, e.g. all
@@ -886,12 +900,30 @@ in different columns or separated by other tiers).
 Pre-computed sum: 1 + 3 + 9 + 27 + 81 + 243 + 729 + 2187 + 6561 +
 19683 + 59049 = **88573**.
 
-Verify that the displayed score equals 88573.
+With a fresh `comboScore` of 0, the displayed score equals 88573.
 
 ### 6.3 — Empty board is zero
 
 After the very first frame of a round, with no pieces yet
 dropped, the score is 0. Trivial but worth pinning.
+
+### 6.4 — Cascade chain bonus
+
+A single merge in a cascade adds zero to comboScore. Each
+additional chain link adds 10. Run three drops on the empty board
+(or any deterministic setup) that produce, respectively:
+
+- a one-merge cascade (e.g., drop tier-1 at column 4 onto two
+  existing tier-1s at columns 4 and 5) — `comboScore` after
+  settle = 0.
+- a two-merge cascade (acceptance test 2.4 reproduces this) —
+  `comboScore` after settle = 10.
+- a three-merge cascade (column 0 stacked floor-up as
+  `1, 2, 2, 3, 3` with a tier-1 at column 1 row 0; drop horizontal
+  `[1/1]` at column 3) — `comboScore` after settle = 20.
+
+The chain bonus accumulates across drops: a follow-up two-merge
+cascade after the third example would leave `comboScore` at 30.
 
 ## Section 7 — Determinism
 

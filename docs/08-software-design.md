@@ -307,7 +307,8 @@ type State = {
   board: Board;            // [row][column], 7 wide × 9 tall (rows 0–6 playfield, 7–8 overflow)
   active: ActivePiece | null;
   preview: Piece;
-  score: number;
+  score: number;           // displayed total = comboScore + boardSum(board)
+  comboScore: number;      // running cascade-chain bonus
 };
 ```
 
@@ -326,15 +327,16 @@ the rest of the codebase:
   soon as the previous one is committed, so it's part of game
   truth — not presentation. Snapshots therefore fully describe
   what the player can see.
-- **Score lives in the state**, even though it is computable from
-  the board. The spec rule "the score updates only on a stable
-  board" makes it genuinely stateful: during a cascade, the
-  displayed score holds at the previous stable value while the
-  board changes underneath. Carrying the score forward through
-  cascade snapshots and re-syncing on stable-board steps is the
-  natural way to honour that rule. It also keeps the `3^(tier−1)`
-  formula inside the core, so the renderer reads a number rather
-  than knowing about powers of three.
+- **Score and comboScore both live in the state.** `score` is the
+  displayed total (`comboScore + boardSum(board)`); `comboScore`
+  is the running cascade-chain bonus described in
+  `01-gameplay-rules.md` "Scoring". Each step's snapshot carries
+  a freshly recomputed `score` so the displayed total tracks the
+  board live during a drop, and `comboScore` is updated only on
+  the final stable-board step (where `max(chainLinks − 1, 0) × 10`
+  is added). Keeping both fields in state lets the renderer read
+  numbers rather than knowing about powers of three or chain
+  bookkeeping.
 - **`Pair` carries first/second labels**, not just two cells. The
   spec rotation rules ("the element that was on the right ends
   up on the top") preserve identity through rotation, which an

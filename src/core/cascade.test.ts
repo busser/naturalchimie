@@ -1,12 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { applyGravity, findReactingGroups, runCascade } from './cascade';
 import { formatBoard, parseBoard } from './board-text';
+import { computeBoardSum } from './score';
 import type { Piece, State } from './state';
 
 const DUMMY_PREVIEW: Piece = { kind: 'pair', first: 1, second: 1 };
 
 function priorState(board = parseBoard(empty())): State {
-  return { board, active: null, preview: DUMMY_PREVIEW, score: 0 };
+  return {
+    board,
+    active: null,
+    preview: DUMMY_PREVIEW,
+    score: 0,
+    comboScore: 0,
+  };
 }
 
 function empty(): string {
@@ -419,7 +426,49 @@ describe('runCascade — acceptance scenarios', () => {
     expect(merge.groups).toHaveLength(2);
   });
 
-  it('snapshots carry the prior score; the caller stitches the post-cascade score', () => {
+  it('emits live scores per step using the prior comboScore plus the board sum', () => {
+    // Two-merge cascade: tier-1 row reacts to a tier-2 that joins
+    // existing tier-2s and re-reacts. The board has no suspended
+    // cells, so runCascade emits no initial-gravity step — only the
+    // two merges (and possibly a gravity between them).
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      2 . . . . . .
+      2 1 1 1 . . .
+    `);
+    const before: State = { ...priorState(board), comboScore: 100 };
+    const { steps, chainLinks } = runCascade(board, before);
+    expect(chainLinks).toBeGreaterThanOrEqual(2);
+    // Each step's snapshot score = comboScore + boardSum(stepBoard);
+    // the bonus settles in apply.ts, so comboScore stays at 100
+    // throughout the cascade itself.
+    for (const step of steps) {
+      expect(step.snapshot.comboScore).toBe(100);
+      expect(step.snapshot.score).toBe(100 + computeBoardSum(step.snapshot.board));
+    }
+  });
+
+  it('counts each merge step as one chain link', () => {
+    // 2.4: tier-1 merge produces a tier-2 that joins existing tier-2s
+    // and merges again. Two distinct merge steps.
+    const board = parseBoard(`
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . . . . .
+      . . . 2 . . .
+      . . 2 1 . . .
+      . 1 1 1 . . .
+    `);
+    const { chainLinks } = runCascade(board, priorState(board));
+    expect(chainLinks).toBe(2);
+  });
+
+  it('reports zero chain links when nothing reacts', () => {
     const board = parseBoard(`
       . . . . . . .
       . . . . . . .
@@ -427,12 +476,9 @@ describe('runCascade — acceptance scenarios', () => {
       . . . . . . .
       . . . . . . .
       . . . . . . .
-      . 1 1 1 . . .
+      . 1 1 . . . .
     `);
-    const before: State = { ...priorState(board), score: 42 };
-    const { steps } = runCascade(board, before);
-    for (const step of steps) {
-      expect(step.snapshot.score).toBe(42);
-    }
+    const { chainLinks } = runCascade(board, priorState(board));
+    expect(chainLinks).toBe(0);
   });
 });

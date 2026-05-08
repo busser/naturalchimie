@@ -3,6 +3,39 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-09 - Ported NC2's cascade chain bonus
+
+Reading the *Naturalchimie 2* source from Motion Twin's
+WebGamesArchives turned up a piece of scoring our spec was missing:
+a running counter that ratchets up on chained reactions, on top of
+the per-tier sum. Ported it as `comboScore`. The formula matches
+NC2's `Stage.updateStaticScore`: `comboScore += max(chainLinks - 1,
+0) * 10`, where `chainLinks` is the number of merge steps the
+cascade resolved. The first reaction earns nothing; each link
+beyond it adds 10. The displayed score is `comboScore +
+boardSum(board)`.
+
+In the state model, `score` now updates on every step's snapshot
+(pair-land, each merge, each detonation, gravity, and the final
+cascade step that folds in the chain bonus). That keeps the
+snapshot contract clean: every `Step.snapshot` describes the
+displayable state at the moment that step finishes. Game-over
+freezes both `score` and `comboScore` at their pre-drop values, so
+a doomed cascade does not visually award any points.
+
+Tried letting the sidebar tick along with the live state. It was
+distracting - the numeral jumped through every merge and dipped
+during 4-element merges before bouncing back up. The renderer now
+gates the DOM update on the spawn step entering flight: the moment
+the cascade settles and the next piece begins sliding into the
+spawn area, the score snaps to the post-cascade total in a single
+update. No count-up animation. Spec lines that briefly described
+per-step ticking were walked back across `01-gameplay-rules.md`,
+`04-visual-style.md`, `05-animations.md`, `06-acceptance-tests.md`,
+and `00-overview.md`. Test 6.1 now exercises the gated UI behavior
+explicitly, and 6.4 was added for the chain-bonus formula
+(1-merge: +0, 2-merge: +10, 3-merge: +20).
+
 ## 2026-05-08 - Auto-refreshed the bookmarked app on new deploys
 
 Saved the page as an iPhone home-screen bookmark to play it like a

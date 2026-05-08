@@ -19,6 +19,7 @@ export function createInitialState(rng: Rng): [State, Rng] {
       active: pieceToActive(first),
       preview,
       score: 0,
+      comboScore: 0,
     },
     afterSecond,
   ];

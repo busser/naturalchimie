@@ -417,8 +417,9 @@ The game-over screen is the only modal state in the game.
 For clarity, listing things that explicitly do **not** animate, to
 prevent over-engineering:
 
-- The score numeral does not count up. It updates instantly on a
-  stable board.
+- The score numeral does not count up. It snaps to its new value
+  once per drop, the moment the cascade settles (see
+  `04-visual-style.md` "Score readout").
 - The mountains and sky do not parallax, scroll, or breathe.
 - The decorative filigree frame is static.
 - There is no "Ready?" countdown when starting a round. The first

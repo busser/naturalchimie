@@ -229,12 +229,15 @@ exist. Once the cascade ends, the board is **stable**, and the
 following happens, in this order:
 
 1. The lose condition is checked (next subsection).
-2. If the round did not end, the score is recomputed (see
-   "Scoring" below).
-3. The piece that has been visible in the preview window
+2. If the round did not end, the cascade chain bonus is added to
+   `comboScore` (see "Scoring" below). This is the only point at
+   which `comboScore` itself changes during a drop.
+3. The displayed score in the sidebar refreshes to the
+   post-cascade total.
+4. The piece that has been visible in the preview window
    throughout the cascade slides upward out of the preview window
    and into the spawn area, becoming the new active piece.
-4. After a brief gap, a freshly generated piece slides downward
+5. After a brief gap, a freshly generated piece slides downward
    into the now-empty preview window from above.
 
 During the cascade itself, the preview window continues to show
@@ -257,14 +260,14 @@ There is no win condition. The player plays until they lose.
 
 ## Scoring
 
-The score is a non-negative integer. The score is recomputed
-**only on a stable board**, using this formula:
+The score is a non-negative integer. It has two parts:
 
 ```
-score = sum over all elements currently on the playfield of 3^(tier − 1)
+score = comboScore + boardSum
 ```
 
-That is:
+`boardSum` is the sum of `3^(tier − 1)` over the elements currently
+on the playfield:
 
 | Tier | Element | Value |
 |---|---|---|
@@ -281,23 +284,50 @@ That is:
 | 11 | ore | 59,049 |
 | 12 | gold nugget | 177,147 |
 
-Notes on this formula:
+`comboScore` is a separate counter that accumulates a cascade-chain
+bonus. It starts at zero and ratchets up when the board settles
+after a drop:
 
-- A reaction of exactly 3 same-tier elements is **score-neutral**:
-  3 × 3^(n−1) = 3^n = the value of the resulting tier-(n+1) element.
-- A reaction of 4 or more elements **decreases** the score: the
-  consumed total exceeds the produced single element.
-- Elements destroyed by dynamite or detonator are simply gone, so
-  the recomputed score is lower by the value those elements
-  contributed.
-- Score is computed only on the playfield (rows 1–7). Anything in
-  the overflow zone or spawn area is excluded — though by the time
-  scoring runs, the board is stable and rows 8 and 9 are
-  guaranteed empty.
+```
+comboScore += max(chainLinks − 1, 0) × 10
+```
 
-The score is displayed in the sidebar (see `04-visual-style.md`).
-The displayed score updates only when the board becomes stable. It
-does not animate or fluctuate during cascades.
+`chainLinks` is the number of reaction steps in the cascade that
+just completed (one step per simultaneous-resolution pass; a step
+that resolves five components at once is one link). The first
+reaction in a cascade earns no bonus; each further chain link adds
+10. comboScore never decreases.
+
+This rule is ported from *Naturalchimie 2*'s `staticScore`
+(`Stage.updateStaticScore` in the published source). It rewards
+chained reactions specifically, on top of the board's sum.
+
+Notes on the boardSum half:
+
+- A reaction of exactly 3 same-tier elements is **score-neutral
+  for boardSum**: 3 × 3^(n−1) = 3^n = the value of the resulting
+  tier-(n+1) element.
+- A reaction of 4 or more elements **decreases boardSum**: the
+  consumed total exceeds the produced single element. The chain
+  bonus on comboScore can offset this when the merge is part of a
+  longer chain.
+- Elements destroyed by dynamite or a detonator are simply gone,
+  so boardSum drops by the value those elements contributed.
+- boardSum is computed only over the playfield (rows 1–7).
+  Anything in the overflow zone or spawn area is excluded.
+
+In the state model, `score` is recomputed live on every step's
+snapshot (pair-land, each merge, each detonation, and the final
+cascade step that folds in the chain bonus). The **displayed**
+score in the sidebar, however, only refreshes once per drop, at
+the moment the cascade settles — just before the next piece
+slides into the spawn area. Per-step ticking of the numeral was
+tried and found distracting; see `04-visual-style.md`
+"Score readout".
+
+If the round ends on a drop (the lose condition fires), the score
+does not change at all — every step's displayed score holds at
+the value from before the drop, and `comboScore` is preserved.
 
 ## Preview
 
@@ -340,8 +370,11 @@ For a complete drop, the order of operations is:
    Reactions are detected, animated, and resolved; gravity is
    applied; the loop repeats until stable.
 4. The lose condition is checked.
-5. If still alive, the score is recomputed and the displayed score
-   updates.
+5. If still alive, the cascade chain bonus is added to
+   `comboScore`. The state's `score` field has been kept in sync
+   throughout, so by this point its final value already reflects
+   the new `comboScore + boardSum`. The displayed score in the
+   sidebar refreshes here, in a single update.
 6. The active pair is replaced by the preview piece, and a new
    piece is generated and placed in the preview.
 7. Player input resumes.

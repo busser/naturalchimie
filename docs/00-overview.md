@@ -22,8 +22,9 @@ In scope:
 - Match-3+ reactions, cascades, and per-column gravity.
 - Spawn pool that grows as the player produces new elements during the run.
 - Two special solo-spawn items: dynamite and detonator.
-- Score, computed as the sum of element values currently on the board
-  whenever the board is stable.
+- Score, computed live as `comboScore + sum of element values on the
+  board`, with `comboScore` accumulating a cascade-chain bonus on each
+  drop.
 - The visual identity of the original: cartoonish hand-drawn vials and
   alchemy ingredients, sky-blue playfield with painted mountains, brown
   parchment sidebar with decorative cream-colored vine borders.
@@ -108,6 +109,7 @@ conforms.
   reactions resolve, gravity compacts each column, new reactions are
   checked, and so on until the board is stable.
 - **Stable board** — a state with no pending reactions and no floating
-  elements. The score is recomputed only on stable boards.
+  elements. The cascade-chain bonus settles into `comboScore` only on
+  stable boards, and the sidebar score refreshes only between drops.
 - **Spawn pool** — the set of elements the game may currently choose
   from when generating a new pair.

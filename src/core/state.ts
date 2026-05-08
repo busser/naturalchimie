@@ -71,13 +71,20 @@ export type Piece =
 // The full game position.
 //
 // `active` is null between cascades and after game over.
-// `score` carries forward through cascade snapshots and re-syncs to
-// `sum(3^(tier-1))` over the playfield only when the board is stable.
+// `score` is the displayed total: `comboScore + sum(3^(tier-1))` over
+// the playfield. Every step's snapshot updates it, so a cascade
+// visibly moves the score as elements appear and merge.
+// `comboScore` is the running cascade-bonus counter ported from
+// Naturalchimie 2: every drop adds `max(chainLinks - 1, 0) * 10`
+// when the board settles, where `chainLinks` is the number of merge
+// steps the cascade resolved. It only changes on settle, so during a
+// cascade `score` shifts purely from the board sum changing.
 export type State = {
   readonly board: Board;
   readonly active: ActivePiece | null;
   readonly preview: Piece;
   readonly score: number;
+  readonly comboScore: number;
 };
 
 // One player action. The core's signature is `(state, input, rng) →

@@ -267,11 +267,19 @@ When a pair rotates, the elements re-position with a brief tween
 
 ## Score readout
 
-The score in the sidebar updates instantly when the board becomes
-stable after a cascade. There is no count-up animation. The numeral
-appears in its new position as soon as scoring runs. Implementers
-who want a brief flash or color pulse on score change may add one,
-but the value itself should not animate from old to new.
+The score in the sidebar refreshes once per drop, at the moment
+the play area has just stabilized — that is, when the cascade
+ends and the next piece is about to slide into the spawn area.
+The numeral snaps to its new value in a single update; there is
+no count-up animation, and the score is not visibly stepped
+through merges and detonations during a cascade. Implementers
+who want a brief flash or color pulse on score change may add
+one, but the value itself should not tween from old to new.
+
+This is a presentation rule. The core's `score` field updates
+live on every step's snapshot (so the chain-bonus settle is
+already folded in by the final cascade step); the renderer
+gates the DOM update on the stable-board moment.
 
 ## Color palette reference
 
