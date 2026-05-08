@@ -1,6 +1,7 @@
 import './style.css';
 import { createDriver } from './animation/driver';
 import { loadSprites } from './assets/sprite-loader';
+import { createFavicon } from './favicon';
 import { attachKeyboard } from './input/keyboard';
 import { attachTouch } from './input/touch';
 import { createLayout } from './layout';
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   const sprites = await loadSprites();
   const store = createStore(Date.now());
   const layout = createLayout();
+  const favicon = createFavicon(sprites);
 
   let gameOverShown = false;
   function showGameOver(score: number): void {
@@ -84,6 +86,7 @@ async function main(): Promise<void> {
   function restart(): void {
     driver.reset();
     store.restart(Date.now());
+    favicon.reset();
     hideGameOver();
   }
 
@@ -140,6 +143,7 @@ async function main(): Promise<void> {
       scoreEl.textContent = String(snapshot.score);
       lastScore = snapshot.score;
     }
+    favicon.update(snapshot);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
