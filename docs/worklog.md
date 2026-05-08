@@ -3,6 +3,50 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Added touch input
+
+Phase 3 of the responsive layout work. The keyboard's four actions
+(shift left/right, rotate, drop) gained a parallel touch vocabulary:
+horizontal drag, tap, downward flick. Both input layers stay attached
+at all times, so a tablet with a Bluetooth keyboard can mix gestures
+and key presses mid-round.
+
+A new `src/input/touch.ts` mirrors the shape of `keyboard.ts` and
+runs a one-finger state machine on the play area element. The first
+`touchstart` captures the touch identifier, the active piece's
+column, and the live `cellSize` from the layout module. Extra
+fingers are ignored until the captured touch ends. After the finger
+crosses a 0.2-cell dead zone, the gesture classifies as `drag` (most-
+horizontal) or `flick` (most-vertical); orthogonal motion is then
+ignored, except that an in-progress drag may still convert to a drop
+when the downward velocity exceeds 8 cells/s. A touch that ends
+without ever crossing the dead zone counts as a tap and dispatches
+`rotate`.
+
+The drag is relative: the pair starts at its current column on
+touch-down, then snaps to integer columns at one column per cell of
+finger displacement. Shifts only fire when the snap target changes,
+so a steady finger produces no input. The snap target is clamped to
+the active piece's reachable range (5 for horizontal pairs, 6
+otherwise) to avoid drift when the user drags past a wall and back.
+The clamp range is read from the snapshot at `touchstart` rather
+than re-read mid-drag; rotates only come from the touch layer, so
+the orientation can't change during a drag. Velocity is sampled per
+`touchmove` against the previous sample's `(y, timeStamp)`, not
+against the gesture's start.
+
+CSS on `.playfield` got `touch-action: none; user-select: none;
+-webkit-user-select: none;` to suppress pinch-zoom, pull-to-refresh,
+double-tap-zoom, and selection on the play area. The viewport meta
+already added `user-scalable=no` in the previous phase, so the page
+chrome is consistent with the gesture layer. `attachTouch(store,
+layout, playfieldEl)` runs alongside `attachKeyboard(store)` in
+`main.ts`; the play-area element is the canvas's parent `<main>`.
+
+Phase 4's double-tap-to-restart and the layout-aware game-over hint
+are still to come; this commit only covers the in-round gesture
+vocabulary.
+
 ## 2026-05-08 - Added the portrait DOM/CSS layout
 
 Phase 1 made the cell size dynamic; this phase made the layout itself
