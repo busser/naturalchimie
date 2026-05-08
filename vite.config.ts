@@ -1,12 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath, URL } from 'node:url';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   build: {
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
-        spriteTool: fileURLToPath(new URL('./tools/sprite-tool.html', import.meta.url)),
+        ...(command === 'serve' && {
+          spriteTool: fileURLToPath(new URL('./tools/sprite-tool.html', import.meta.url)),
+        }),
       },
     },
   },
@@ -15,4 +17,4 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
   },
-});
+}));
