@@ -3,6 +3,55 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Added the portrait DOM/CSS layout
+
+Phase 1 made the cell size dynamic; this phase made the layout itself
+respond to aspect ratio. With `data-layout` already being written to
+the root by `layout.ts`, the work was almost entirely CSS plus a
+minor HTML cleanup. Touch input and the layout-aware game-over hint
+are still phases 3 and 4.
+
+The score, preview, and playfield all live in a single DOM tree
+that both layouts share. Renamed `<aside class="sidebar">` to
+`<aside class="info">` so the class doesn't lie in portrait, where
+the same node renders as a horizontal top strip. The viewport meta
+gained `viewport-fit=cover, user-scalable=no` so the page fills
+the safe-area inset region and double-tap-zoom doesn't fight the
+gesture vocabulary phase 3 will introduce.
+
+CSS picks up the active layout via `:root[data-layout='portrait']`
+overrides over a landscape-shaped default. The default `#app` is a
+row with stretch alignment so the sidebar fills the playfield's
+12-cell height; the portrait branch flips to a column with 0.2-cell
+outer/mid gaps. The same `.info` panel becomes a 7×2.4-cell strip
+in portrait, with the score taking `flex: 1` so its numeral centers
+in the half left of the preview, and the preview pinned to the
+canvas's intrinsic 3-cell width so no parchment shows through the
+recess sides. `:root` got `min-height: 100svh` and the dark frame
+background, and the body gained `env(safe-area-inset-top/bottom)`
+padding to mirror what `layout.ts` reads off its probe.
+
+Two regressions during the pass were worth recording. First, an
+`align-items: center` I'd added to `#app` overrode flex's default
+stretch, which made the sidebar size to its content (score plus
+preview, ~3 cells) rather than match the playfield's 12 cells.
+Removing that one declaration restored the original look. Second,
+the portrait strip and the 2-cell preview canvas both being 2 cells
+tall meant they touched flush, with no parchment showing around the
+recess. Bumped the strip to 2.4 cells and lifted `HEIGHT_DIVISOR`
+from 15.6 to 16 to keep the cell math aligned with the new vertical
+stack (0.2 + 2.4 + 0.2 + 13 + 0.2). Touching the renderer's headroom
+constants instead would have been more invasive and would have
+diverged the preview canvas between layouts.
+
+The portrait playfield container stays at 12 cells even though the
+spec table reads 7×13. The renderer's `VISIBLE_ROWS` is 12, so
+making the container 13 would have left a one-cell gap at the canvas
+edge or stretched the canvas. Leaving the spec deviation in place
+seemed cheaper than retuning the renderer for a single-row visual
+margin; the extra vertical space soaked up by the layout module's
+divisor just becomes background.
+
 ## 2026-05-08 - Re-signed every commit on main
 
 Noticed that none of the 73 commits on `main` carried an SSH signature,
