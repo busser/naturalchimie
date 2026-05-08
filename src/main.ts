@@ -20,6 +20,15 @@ function requireElement<T extends HTMLElement>(
   return el;
 }
 
+function hideSplash(): void {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  splash.addEventListener('transitionend', () => splash.remove(), {
+    once: true,
+  });
+  splash.classList.add('is-loaded');
+}
+
 async function main(): Promise<void> {
   const canvas = requireElement('playfield-canvas', HTMLCanvasElement);
   const playfieldEl = canvas.parentElement;
@@ -31,9 +40,12 @@ async function main(): Promise<void> {
   const gameOverEl = requireElement('game-over', HTMLElement);
   const gameOverScoreEl = requireElement('game-over-score', HTMLElement);
 
+  // Set --cell and data-layout on the root before awaiting sprites,
+  // so the first paint already matches the user's orientation rather
+  // than flashing the default landscape rules during the load.
+  const layout = createLayout();
   const sprites = await loadSprites();
   const store = createStore(Date.now());
-  const layout = createLayout();
   const favicon = createFavicon(sprites);
 
   let gameOverShown = false;
@@ -133,6 +145,7 @@ async function main(): Promise<void> {
   });
 
   let lastScore = -1;
+  let splashHidden = false;
   function frame(now: number): void {
     driver.tick(now);
     keyboard.tick();
@@ -144,6 +157,10 @@ async function main(): Promise<void> {
       lastScore = snapshot.score;
     }
     favicon.update(snapshot);
+    if (!splashHidden) {
+      splashHidden = true;
+      hideSplash();
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
