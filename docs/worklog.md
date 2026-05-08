@@ -3,6 +3,39 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Auto-refreshed the bookmarked app on new deploys
+
+Saved the page as an iPhone home-screen bookmark to play it like a
+native app, then noticed that pushing a new deploy didn't reach the
+"app" - even after force-quitting and reopening it. Safari has a
+visible refresh button as an escape hatch; webclips don't. GitHub
+Pages serves index.html with a 10-minute max-age, and iOS webclips
+hold onto the cached HTML well past that, so the bookmark kept
+loading the old hashed bundle by name.
+
+The fix is a version handshake. At build time, vite.config.ts resolves
+a build version (GITHUB_SHA in CI, `git rev-parse --short=12` locally,
+a timestamp as last resort), inlines it into the bundle as a
+`__BUILD_VERSION__` constant via Vite's `define`, and a small plugin
+emits `dist/version.json` with the same string. At runtime,
+`src/version-check.ts` fetches `version.json` with `cache: 'no-store'`
+on launch and on `visibilitychange` (so foregrounding the webclip
+also triggers a check), compares to the embedded constant, and on a
+mismatch calls `location.replace` with a `?v=<remote>` query param.
+The query param defeats Safari's HTTP cache for the new request, so
+the fresh index.html lands and pulls in the new hashed assets.
+
+The check is a no-op in dev (`import.meta.env.DEV`) so vite's HMR
+isn't fighting a reload loop. Errors are swallowed silently: if the
+device is offline or version.json is missing for some reason, the
+running version keeps playing rather than getting stuck on a fetch
+failure.
+
+One quirk worth noting: this deploy itself can't help the existing
+bookmark, because the running code predates the checker. After one
+manual refresh (Safari, or "Open in Safari" from the share sheet),
+every subsequent deploy should pick up on its own.
+
 ## 2026-05-08 - Moved the portrait strip below the play area
 
 Held the phone one-handed and noticed the score and preview were sat
