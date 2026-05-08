@@ -3,6 +3,42 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Tightened touch controls after phone playtest
+
+Two complaints from playing on a phone. Drops fired too easily: a tiny
+downward jitter mid-drag was enough to commit the active pair. And
+fast horizontal swipes overshot, because the pair kept gliding past
+the column the finger had reached.
+
+The drop check used to compare a single touchmove sample's
+instantaneous velocity against the threshold and fire as soon as it
+crossed. That made it a one-sample trigger with no notion of "how
+far". Replaced it with a sustained-fast distance: each sample whose
+velocity sits at or above the threshold contributes its dy to an
+accumulator, and any slow or upward sample resets the accumulator to
+zero. The drop fires once the accumulator passes 0.5 cells. Slow
+drags never cross the velocity threshold, brief jolts cross it but
+travel too little to clear the distance gate, and a real flick passes
+both. Both numbers stay tunable.
+
+The shift problem was that touchmove dispatched one input per
+cell-step in a single event handler, which queued multiple shifts in
+the store's input buffer. The buffer drains over several animation
+frames, so shifts kept landing after the finger lifted. The first
+instinct was to drain pending shifts on touchend, but that loses
+intent on slower drags. Settled on backpressure: touchmove only
+records the gesture's target column, and a new tick() method,
+called once per frame from the main loop, dispatches at most one
+shift toward the target and only when the input/step pipeline is
+idle. The pair tracks the finger as fast as the animation allows
+and never runs ahead. As a side effect, lifting mid-sweep stops the
+pair where the dispatcher had reached, which matches the user's
+"one swipe, one column" expectation: a quick flick lands a single
+shift before the finger leaves the screen, while reaching a distant
+column requires holding the finger at the destination long enough
+for the pipeline to drain. Mirrors the existing keyboard
+held-key-repeat pattern in `keyboard.tick()`.
+
 ## 2026-05-08 - Added a loading splash to hide the cold-load layout flash
 
 Opening the game on a portrait viewport showed the landscape layout
