@@ -3,6 +3,36 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Added a loading splash to hide the cold-load layout flash
+
+Opening the game on a portrait viewport showed the landscape layout
+for about a second before the JS-driven layout module corrected
+itself. `createLayout()` writes `--cell` and `data-layout` on the
+root, and that call sat after `await loadSprites()` in `main.ts`, so
+the sprite load held it up. Until those bytes arrived, CSS only knew
+about the default landscape rules.
+
+Moved `createLayout()` ahead of the sprite-load await so the root
+attributes land on the first paint regardless of how slowly sprites
+stream in. That alone covers fast loads, but the full first-paint-
+to-game-ready window is still long enough to be visible on a cold
+cache.
+
+To cover the rest, added a static `<div id="splash">` in `index.html`
+that paints at frame-brown with the first frame and stays put until
+`main.ts` finishes wiring everything up. The first
+`requestAnimationFrame` callback after sprites are loaded and the
+renderer is constructed adds an `is-loaded` class; that triggers a
+500 ms opacity transition, and a one-shot `transitionend` listener
+removes the element from the DOM.
+
+A first iteration tried a hand-drawn alchemy flask SVG with rising
+bubbles and a gentle bob, on the theory that a themed motif would
+feel intentional rather than blank. It looked fine in isolation but
+did not read in the half-second window before fade-out, so it added
+visual noise without paying for itself. The flat overlay reads as
+the game fading in rather than as a loading screen leaving.
+
 ## 2026-05-08 - Hosted the game on GitHub Pages
 
 The original Flash game is unplayable now that browsers have dropped
