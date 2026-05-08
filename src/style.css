@@ -137,6 +137,12 @@ body {
   border: 1px solid var(--frame);
   border-radius: 4px;
   overflow: hidden;
+  /* Suppress pinch-zoom, pull-to-refresh, double-tap-zoom, and text
+     selection so touch gestures route to the input layer per
+     docs/09-responsive-layout.md (Browser-level concerns). */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .playfield canvas {

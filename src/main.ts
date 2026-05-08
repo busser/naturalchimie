@@ -2,6 +2,7 @@ import './style.css';
 import { createDriver } from './animation/driver';
 import { loadSprites } from './assets/sprite-loader';
 import { attachKeyboard } from './input/keyboard';
+import { attachTouch } from './input/touch';
 import { createLayout } from './layout';
 import { createRenderer } from './renderer/playfield';
 import { createPreviewRenderer } from './renderer/preview';
@@ -20,6 +21,10 @@ function requireElement<T extends HTMLElement>(
 
 async function main(): Promise<void> {
   const canvas = requireElement('playfield-canvas', HTMLCanvasElement);
+  const playfieldEl = canvas.parentElement;
+  if (!(playfieldEl instanceof HTMLElement)) {
+    throw new Error('main: #playfield-canvas has no parent element');
+  }
   const previewCanvas = requireElement('preview-canvas', HTMLCanvasElement);
   const scoreEl = requireElement('score', HTMLElement);
   const gameOverEl = requireElement('game-over', HTMLElement);
@@ -74,6 +79,7 @@ async function main(): Promise<void> {
     previewRenderer.resize(cellSize);
   });
   const keyboard = attachKeyboard(store);
+  attachTouch(store, layout, playfieldEl);
 
   window.addEventListener('keydown', (e) => {
     if (e.key !== ' ' && e.key !== 'Spacebar') return;
