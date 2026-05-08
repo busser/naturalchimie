@@ -3,6 +3,37 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Added a dynamic favicon
+
+A small polish piece outside the responsive-layout plan: the browser
+tab now shows the highest tier the player has produced this run,
+climbing from the green potion at page load up to the gold nugget if
+the player reaches it.
+
+`src/favicon.ts` owns a 64x64 offscreen canvas and the one
+`<link rel="icon">` element. On construction it paints tier 1, so the
+tab has an icon from the moment JS runs. `update(state)` is called
+each frame from `main.ts` and scans the board for the highest-tier
+element; it short-circuits when the watermark has not advanced and
+only re-encodes the PNG data URL when a strictly higher tier appears.
+The icon climbs monotonically: consuming a high-tier element inside a
+merge does not regress it. `reset()` is called from `restart()` and
+repaints tier 1 rather than clearing the link, so a new run does not
+flicker the tab through a no-icon state.
+
+Sprite drawing reuses `drawSpriteAtCell` from the shared sprite
+renderer. The 64x64 canvas reserves 0.25 cells of headroom above the
+one-cell footprint so parts that extrude upward (potion necks, apple
+stems) are not clipped. A `<link rel="icon" href="data:,">`
+placeholder in `index.html` covers the window between page load and
+sprites finishing loading, and suppresses the implicit
+`/favicon.ico` 404 the browser would otherwise issue.
+
+An earlier draft also scanned the active piece and the preview so the
+icon could reflect the very first piece before it landed on the
+board. The fall-back-to-tier-1 path renders the same starting state
+with less code, so the active/preview scan was dropped.
+
 ## 2026-05-08 - Added gesture restart on game over
 
 Phase 4 of the responsive layout work, the smallest of the bunch. The
