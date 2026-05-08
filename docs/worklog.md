@@ -3,6 +3,29 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Re-signed every commit on main
+
+Noticed that none of the 73 commits on `main` carried an SSH signature,
+even though the global git config has `commit.gpgsign=true` plus the
+1Password SSH signer set. Each `git commit` along the way had been
+invoked with something that bypassed signing (`--no-gpg-sign` or
+`-c commit.gpgsign=false`), so the signatures were silently dropped at
+authoring time rather than the config being broken.
+
+Backed up the old tip to `backup-before-resign` and ran `git rebase
+--exec 'git commit --amend --no-edit -S' --root` to amend every commit
+with a fresh signature. The first attempt aborted on a stray
+`.DS_Store` in the working tree (the rebase couldn't move past the
+"add initial spec" commit that creates the file because an unrelated
+copy was sitting untracked); removed it and retried clean. After the
+rebase, every commit object carries a `gpgsig` SSH signature header.
+
+`git log --show-signature` and `%G?` still report `N` locally because
+`gpg.ssh.allowedSignersFile` isn't configured, but that's a local
+verifier setup issue, not a missing-signature issue. The signatures
+themselves are intact and will verify on hosts (e.g. GitHub) that have
+the public key registered.
+
 ## 2026-05-08 - Made the cell size dynamic
 
 The fixed 48 px cell hardcoded in `main.ts` and `setupCanvas` meant
