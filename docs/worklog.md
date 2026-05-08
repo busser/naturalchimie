@@ -3,6 +3,45 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-08 - Added gesture restart on game over
+
+Phase 4 of the responsive layout work, the smallest of the bunch. The
+keyboard already restarted on SPACE; touch users now get the same path
+via a double-tap on the game-over overlay, and the hint text under the
+final score adapts to the active layout (portrait shows "Double-tap to
+play again.", landscape keeps "Press SPACE to play again.").
+
+Two taps within 400 ms commit. The overlay was previously
+click-through (`pointer-events: none`) so the playfield underneath
+could receive in-round touches; the `is-visible` rule now adds
+`pointer-events: auto` so the double-tap detector receives `touchend`
+events. The four touch handlers on the overlay
+(start/move/end/cancel) all `stopPropagation()` so events do not
+bubble up to `.playfield`, where the in-round touch handler lives.
+Without that, a tap on the overlay would also open a phantom gesture
+in `touch.ts` that ends in a stray `rotate` dispatch on a board the
+player has already lost.
+
+The SPACE branch in `main.ts` got extracted into a small `restart()`
+helper that the new `touchend` handler also calls, so both inputs run
+the exact same three lines: `driver.reset()`,
+`store.restart(Date.now())`, `hideGameOver()`. The optional first-tap
+acknowledgement (a brief pulse, mentioned by
+`09-responsive-layout.md`) was deferred since it is a visual flourish
+rather than a correctness concern.
+
+The hint became two `<span>` siblings inside `.game-over__hint`,
+toggled by CSS on `:root[data-layout=...]`. The overlay is hidden
+until a `game-over` step fires, by which point `layout.ts` has long
+since written `data-layout` to the root, so there is no FOUC where
+both spans render at once.
+
+Phase 5 is the runtime-switch verification pass: rotating a phone
+mid-cascade should keep timelines running at the new cell size. The
+code is already set up for it (the renderers' `resize()` does not
+touch in-flight animation state), so phase 5 is mostly manual
+checking plus any small fixes that surface.
+
 ## 2026-05-08 - Added touch input
 
 Phase 3 of the responsive layout work. The keyboard's four actions
