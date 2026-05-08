@@ -76,7 +76,13 @@ carry between pairs.
 
 ## Controls
 
-The game is keyboard-only. Four keys:
+The game accepts keyboard and touch input simultaneously; either
+works on any device that offers it. This file describes the
+keyboard mapping. Touch gestures and the rule for when each
+input mode is shown to the user are described in
+`09-responsive-layout.md`.
+
+The keyboard mapping is four keys:
 
 | Key | Action |
 |---|---|

@@ -29,6 +29,8 @@ In scope:
   parchment sidebar with decorative cream-colored vine borders.
 - Merge animation (white-orb collapse + sparkle particles) and the
   animated downward dynamite explosion.
+- A responsive layout that adapts to portrait or landscape viewports,
+  and touch input that works alongside keyboard input on any device.
 
 Out of scope:
 
@@ -51,9 +53,6 @@ Out of scope:
   polish.
 - **Frame-perfect timing.** Animation durations in this spec are starting
   values intended to be tuned by feel during implementation.
-- **Mobile support.** The game is keyboard-only. Touch controls are not
-  in scope. Responsive layout for window resizes is a nice-to-have, not
-  a requirement.
 - **Accessibility features** beyond what falls out naturally from
   keyboard controls and reasonable color contrast.
 
@@ -64,7 +63,7 @@ coding agent) working alongside a human reviewer. It is intentionally
 prescriptive: rules are stated as testable invariants, numbers are given
 where possible, and ambiguity is called out explicitly when it remains.
 
-The spec is split across seven files. They are meant to be read
+The spec is split across eight files. They are meant to be read
 in order the first time, then referenced individually thereafter:
 
 1. `00-overview.md` — this file.
@@ -79,6 +78,9 @@ in order the first time, then referenced individually thereafter:
 7. `07-sprite-metadata-and-tooling.md` — how sprite art is integrated:
    the metadata schema, the render math, and the live preview tool used
    to author sprite metadata.
+8. `09-responsive-layout.md` — the portrait layout and the touch
+   input mode, plus the rules for switching between layouts and
+   input modes at runtime.
 
 A separate file, `06-acceptance-tests.md`, lists concrete scenarios for
 implementers to turn into automated tests. It is not part of the

@@ -4,6 +4,12 @@ This file describes the look of the game: layout, palette,
 sprites, and the sidebar. Animations are covered separately in
 `05-animations.md`.
 
+The layout described here is the **landscape layout**, used when
+the viewport is wider than it is tall. The portrait layout (used
+on phones and tablets held vertically) is described in
+`09-responsive-layout.md`. Palette, sprites, and animations are
+shared across both.
+
 The visual identity is **hand-drawn cartoon**, not pixel art and
 not flat-vector minimalism. Outlines are visible but not heavy.
 Highlights are soft and round. Colors are saturated but not
