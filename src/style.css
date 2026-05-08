@@ -6,6 +6,10 @@
   --filigree: #f0e8d0;
   --score-ink: #5a3820;
   --frame: #2a1810;
+  /* Fallback used until layout.ts measures the viewport and writes
+     --cell to the root. The reference cell size from the original
+     fixed layout, so the first paint matches that build. */
+  --cell: 48px;
 }
 
 * {
@@ -29,23 +33,26 @@ body {
 
 #app {
   display: flex;
-  gap: 16px;
-  padding: 16px;
+  gap: calc(var(--cell) / 3);
+  padding: calc(var(--cell) / 3);
 }
 
+/* The 25/6 ratio reproduces the previous 200px sidebar at the
+   reference 48px cell (200 / 48 = 25/6) and lets the sidebar scale
+   in cell-units at any other cell size. */
 .sidebar {
-  width: 200px;
+  width: calc(var(--cell) * 25 / 6);
   background: var(--parchment);
   border: 1px solid var(--frame);
   border-radius: 4px;
-  padding: 24px 16px;
+  padding: calc(var(--cell) * 0.5) calc(var(--cell) / 3);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: calc(var(--cell) * 0.5);
 }
 
 .score {
-  font-size: 36px;
+  font-size: calc(var(--cell) * 0.75);
   font-weight: bold;
   color: var(--score-ink);
   text-align: center;
@@ -55,7 +62,7 @@ body {
 .preview {
   background: var(--parchment-recess);
   border-radius: 4px;
-  height: 96px;
+  height: calc(var(--cell) * 2);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
@@ -66,8 +73,13 @@ body {
   display: block;
 }
 
+/* Sized in cell-units rather than implicitly from the canvas child
+   so layout reserves the right region before assets load and so the
+   region survives the canvas resize that follows a viewport change. */
 .playfield {
   position: relative;
+  width: calc(var(--cell) * 7);
+  height: calc(var(--cell) * 12);
   background: linear-gradient(var(--sky-top), var(--sky-bottom));
   border: 1px solid var(--frame);
   border-radius: 4px;

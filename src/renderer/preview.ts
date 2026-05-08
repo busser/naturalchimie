@@ -17,6 +17,7 @@ import {
   drawSpriteAtCell,
   type SpriteAsset,
 } from '../assets/sprite-renderer';
+import { applyCanvasSize } from './canvas';
 
 // Canvas height matches the preview recess (2 cells = 96 px at the
 // playfield's 48 px cell size, which is what `.preview` is set to in
@@ -45,6 +46,7 @@ const PHASE_IN_START =
 
 export type PreviewRenderer = {
   draw(now: number): void;
+  resize(cellSize: number): void;
 };
 
 export type PreviewRendererDeps = {
@@ -58,12 +60,22 @@ export type PreviewRendererDeps = {
 export function createPreviewRenderer(
   deps: PreviewRendererDeps,
 ): PreviewRenderer {
-  const { canvas, sprites, cellSize, getSnapshot, getInFlight } = deps;
-  const cssWidth = (PIECE_COLS + 2 * SIDE_HEADROOM) * cellSize;
-  const cssHeight = (1 + TOP_HEADROOM + BOTTOM_HEADROOM) * cellSize;
-  const ctx = setupCanvas(canvas, cssWidth, cssHeight);
+  const { canvas, sprites, getSnapshot, getInFlight } = deps;
+  let cellSize = deps.cellSize;
+  let cssWidth = (PIECE_COLS + 2 * SIDE_HEADROOM) * cellSize;
+  let cssHeight = (1 + TOP_HEADROOM + BOTTOM_HEADROOM) * cellSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('createPreviewRenderer: 2D context unavailable');
+  applyCanvasSize(canvas, ctx, cssWidth, cssHeight);
 
   return {
+    resize(nextCellSize: number) {
+      if (nextCellSize === cellSize) return;
+      cellSize = nextCellSize;
+      cssWidth = (PIECE_COLS + 2 * SIDE_HEADROOM) * cellSize;
+      cssHeight = (1 + TOP_HEADROOM + BOTTOM_HEADROOM) * cellSize;
+      applyCanvasSize(canvas, ctx, cssWidth, cssHeight);
+    },
     draw(now: number) {
       const state = getSnapshot();
       const inflight = getInFlight(now);
@@ -102,24 +114,6 @@ function computeDrawing(
 
 function easeInOut(t: number): number {
   return t * t * (3 - 2 * t);
-}
-
-function setupCanvas(
-  canvas: HTMLCanvasElement,
-  cssWidth: number,
-  cssHeight: number,
-): CanvasRenderingContext2D {
-  const dpr = window.devicePixelRatio ?? 1;
-  canvas.width = Math.round(cssWidth * dpr);
-  canvas.height = Math.round(cssHeight * dpr);
-  canvas.style.width = `${cssWidth}px`;
-  canvas.style.height = `${cssHeight}px`;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('createPreviewRenderer: 2D context unavailable');
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  return ctx;
 }
 
 function drawPiece(

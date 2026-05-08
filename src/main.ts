@@ -2,11 +2,10 @@ import './style.css';
 import { createDriver } from './animation/driver';
 import { loadSprites } from './assets/sprite-loader';
 import { attachKeyboard } from './input/keyboard';
+import { createLayout } from './layout';
 import { createRenderer } from './renderer/playfield';
 import { createPreviewRenderer } from './renderer/preview';
 import { createStore } from './store';
-
-const CELL_SIZE = 48;
 
 function requireElement<T extends HTMLElement>(
   id: string,
@@ -28,6 +27,7 @@ async function main(): Promise<void> {
 
   const sprites = await loadSprites();
   const store = createStore(Date.now());
+  const layout = createLayout();
 
   let gameOverShown = false;
   function showGameOver(score: number): void {
@@ -58,16 +58,20 @@ async function main(): Promise<void> {
   const renderer = createRenderer({
     canvas,
     sprites,
-    cellSize: CELL_SIZE,
+    cellSize: layout.get().cellSize,
     getSnapshot: store.getSnapshot,
     getInFlight: driver.getInFlight,
   });
   const previewRenderer = createPreviewRenderer({
     canvas: previewCanvas,
     sprites,
-    cellSize: CELL_SIZE,
+    cellSize: layout.get().cellSize,
     getSnapshot: store.getSnapshot,
     getInFlight: driver.getInFlight,
+  });
+  layout.subscribe(({ cellSize }) => {
+    renderer.resize(cellSize);
+    previewRenderer.resize(cellSize);
   });
   const keyboard = attachKeyboard(store);
 

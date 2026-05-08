@@ -23,6 +23,7 @@ import {
   drawSpriteAtCell,
   type SpriteAsset,
 } from '../assets/sprite-renderer';
+import { applyCanvasSize } from './canvas';
 import {
   cellKey,
   createEffect,
@@ -50,6 +51,12 @@ const SPAWN_PHASE_DOWN_END_T =
 
 export type Renderer = {
   draw(now: number): void;
+  // Re-size the canvas to a new cell size without dropping in-flight
+  // animation state. effect, effectStep, and fuse particles are all
+  // preserved so timelines keep running across a resize; the only
+  // canvas-level reset is the transform + imageSmoothing flags that
+  // setting canvas.width/height clears (see canvas.ts).
+  resize(cellSize: number): void;
 };
 
 export type RendererDeps = {
@@ -61,10 +68,13 @@ export type RendererDeps = {
 };
 
 export function createRenderer(deps: RendererDeps): Renderer {
-  const { canvas, sprites, cellSize, getSnapshot, getInFlight } = deps;
-  const cssWidth = BOARD_WIDTH * cellSize;
-  const cssHeight = VISIBLE_ROWS * cellSize;
-  const ctx = setupCanvas(canvas, cssWidth, cssHeight);
+  const { canvas, sprites, getSnapshot, getInFlight } = deps;
+  let cellSize = deps.cellSize;
+  let cssWidth = BOARD_WIDTH * cellSize;
+  let cssHeight = VISIBLE_ROWS * cellSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('createRenderer: 2D context unavailable');
+  applyCanvasSize(canvas, ctx, cssWidth, cssHeight);
 
   // Effects (merge bloom, gravity tween) are step-scoped: built when
   // a new merge/gravity step enters flight, dropped when it commits.
@@ -80,6 +90,13 @@ export function createRenderer(deps: RendererDeps): Renderer {
   const fuse: FuseParticles = createFuseParticles();
 
   return {
+    resize(nextCellSize: number) {
+      if (nextCellSize === cellSize) return;
+      cellSize = nextCellSize;
+      cssWidth = BOARD_WIDTH * cellSize;
+      cssHeight = VISIBLE_ROWS * cellSize;
+      applyCanvasSize(canvas, ctx, cssWidth, cssHeight);
+    },
     draw(now: number) {
       const state = getSnapshot();
       const inflight = getInFlight(now);
@@ -155,24 +172,6 @@ export function createRenderer(deps: RendererDeps): Renderer {
       ctx.restore();
     },
   };
-}
-
-function setupCanvas(
-  canvas: HTMLCanvasElement,
-  cssWidth: number,
-  cssHeight: number,
-): CanvasRenderingContext2D {
-  const dpr = window.devicePixelRatio ?? 1;
-  canvas.width = Math.round(cssWidth * dpr);
-  canvas.height = Math.round(cssHeight * dpr);
-  canvas.style.width = `${cssWidth}px`;
-  canvas.style.height = `${cssHeight}px`;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('createRenderer: 2D context unavailable');
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  return ctx;
 }
 
 function drawLoseThreshold(
