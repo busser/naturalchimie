@@ -3,6 +3,39 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-09 - Slimmed the production sprite payload
+
+The game took a long time to load on slow connections, manifesting as
+a static brown screen while ~37MB of sprite PNGs streamed in. Most of
+that was waste. The PNGs ship at 1024x1536, but the renderer draws
+each cell at 50-100 CSS pixels (100-300 device pixels with retina),
+and the live cell footprint inside each PNG is only 300-650 source
+pixels. We were sending several times the resolution any device could
+display.
+
+A new Vite plugin runs after the bundle is written, downsampling each
+sprite PNG to half size (512x768) and transcoding it to WebP at
+quality 85. The renderer reads `anchor`, `cell_width_px`,
+`cell_height_px`, and `fuse_tip` as source-pixel coordinates on the
+loaded image, so the plugin scales those values in lockstep and
+rewrites the `file` field in `sprites.json` to point at the new
+`.webp` filenames. The runtime needs no changes: `new Image()`,
+`drawImage`, and `getImageData` all decode WebP transparently in any
+browser that can already run the modern Canvas pipeline.
+
+The originals stay in `public/sprites/` untouched. Dev mode keeps
+serving the full-resolution art, so the sprite-authoring tool works
+against the source of truth, and the production transform is
+contained to `dist/`. The plugin also strips
+`dist/sprites/abandoned-designs/` from the bundle: authoring backups
+that had been getting copied along by Vite's public/ pipeline despite
+never being referenced at runtime.
+
+Total payload: 37MB to 452KB, a ~99% reduction. The two tuning knobs
+sit at the top of `tools/resize-sprites.mjs`: `scale` (default 0.5)
+and `quality` (default 85). Added `sharp` as a devDependency for the
+resize/encode pipeline.
+
 ## 2026-05-09 - Aligned the random-pair generator with NC2
 
 Continued porting from the *Naturalchimie 2* source, this time the

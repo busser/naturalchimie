@@ -1,6 +1,12 @@
 import { defineConfig, type Plugin } from 'vitest/config';
 import { execSync } from 'node:child_process';
+import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+
+// @ts-expect-error - .mjs script loaded for its build-time side effects.
+import { resizeSprites } from './tools/resize-sprites.mjs';
+
+const SPRITE_SCALE = 0.5;
 
 function resolveBuildVersion(): string {
   const fromEnv = process.env.GITHUB_SHA ?? process.env.BUILD_VERSION;
@@ -28,13 +34,31 @@ function emitVersionJson(version: string): Plugin {
   };
 }
 
+// Vite copies public/sprites/ into dist/sprites/ during the build. After the
+// bundle settles, downscale the PNGs and rewrite sprites.json so production
+// payloads shrink (originals stay untouched in public/, so dev and the
+// sprite-authoring tool keep using full-resolution art).
+function resizeSpritesPlugin(scale: number, outDir: string): Plugin {
+  return {
+    name: 'naturalchimie:resize-sprites',
+    apply: 'build',
+    async closeBundle() {
+      const dir = path.resolve(outDir, 'sprites');
+      await resizeSprites({ dir, scale });
+    },
+  };
+}
+
 const BUILD_VERSION = resolveBuildVersion();
 
 export default defineConfig(({ command }) => ({
   define: {
     __BUILD_VERSION__: JSON.stringify(BUILD_VERSION),
   },
-  plugins: [emitVersionJson(BUILD_VERSION)],
+  plugins: [
+    emitVersionJson(BUILD_VERSION),
+    resizeSpritesPlugin(SPRITE_SCALE, 'dist'),
+  ],
   build: {
     rollupOptions: {
       input: {
