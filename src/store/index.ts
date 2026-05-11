@@ -29,6 +29,10 @@ export type Store = {
   // No-op while inputs or steps are pending so it can't race with a
   // cascade whose spawn step has already baked in the old preview.
   randomizePreview(): void;
+  // Dev-only: forces the round into the lost state immediately. Drops
+  // any pending inputs and steps so the game-over step plays right
+  // away, regardless of whether a cascade was in flight.
+  forceGameOver(): void;
 };
 
 export function createStore(seed: number): Store {
@@ -79,6 +83,13 @@ export function createStore(seed: number): Store {
       const [preview, nextRng] = samplePiece(committed.board, rng);
       committed = { ...committed, preview };
       rng = nextRng;
+    },
+    forceGameOver: () => {
+      inputQueue.length = 0;
+      stepQueue.length = 0;
+      acceptingInput = false;
+      const snapshot: State = { ...committed, active: null };
+      stepQueue.push({ event: { kind: 'game-over' }, snapshot });
     },
   };
 }

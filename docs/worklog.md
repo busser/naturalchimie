@@ -3,6 +3,25 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-12 - Added a dev-mode loss trigger
+
+Testing the game-over overlay shouldn't require actually overflowing
+the board. Added a dev-only `x` key binding that pushes the round into
+the lost state on the next frame. The listener is gated on
+`import.meta.env.DEV` so production builds tree-shake it, mirroring
+the existing spacebar preview re-roll, and the mutation goes through
+a new `forceGameOver()` method on the store rather than reaching into
+the renderer.
+
+The store method clears the input and step queues, closes the input
+gate, and pushes a `game-over` step whose snapshot has `active: null`.
+The driver's existing zero-duration handling drains it on the next
+frame, `onStepCommit` fires, and the overlay appears with whatever
+score was on the board. Pressing `x` mid-cascade discards any in-
+flight animation rather than waiting it out, which is the right
+tradeoff for a debug knob: the trigger needs to be predictable, not
+graceful. SPACE on the overlay still restarts as usual.
+
 ## 2026-05-09 - Slimmed the production sprite payload
 
 The game took a long time to load on slow connections, manifesting as

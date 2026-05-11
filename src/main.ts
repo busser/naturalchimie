@@ -117,6 +117,14 @@ async function main(): Promise<void> {
     }
   });
 
+  if (import.meta.env.DEV) {
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'x' && e.key !== 'X') return;
+      e.preventDefault();
+      store.forceGameOver();
+    });
+  }
+
   // Double-tap on the game-over overlay restarts, mirroring the SPACE
   // branch above. Two taps within 400 ms commit; the first tap arms the
   // window. stopPropagation keeps these touches out of the playfield's
