@@ -82,6 +82,13 @@ export function createRenderer(deps: RendererDeps): Renderer {
   // identity is enough to detect transitions.
   let effect: Effect | null = null;
   let effectStep: Step | null = null;
+  // Once a game-over step commits, the snapshot's board is intact but
+  // the unravel has dissolved every element on screen, so the normal
+  // board pass would pop them back in (dimmed) beneath the modal. We
+  // suppress the board pass until a fresh active piece appears (i.e.,
+  // restart drops a new initial state in). No state-level change to
+  // the snapshot; this flag stays in the renderer.
+  let postGameOver = false;
   // Fuse particles span the dynamite's whole life as the active piece
   // — spawn-slide, shifts, drop — so it's owned across frames rather
   // than rebuilt per step. Live particles fade out naturally between
@@ -101,6 +108,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
       const state = getSnapshot();
       const inflight = getInFlight(now);
       if (inflight === null) {
+        if (effectStep?.event.kind === 'game-over') {
+          postGameOver = true;
+        }
         effect = null;
         effectStep = null;
       } else if (inflight.step !== effectStep) {
@@ -111,6 +121,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
           sprites,
         );
         effectStep = inflight.step;
+      }
+      // Restart drops a fresh initial state whose `active` piece is
+      // already populated (no spawn step needed), so the moment we
+      // see one again the suppression has served its purpose.
+      if (postGameOver && state.active !== null) {
+        postGameOver = false;
       }
       ctx.clearRect(0, 0, cssWidth, cssHeight);
       // Apply the effect's canvas-wide shake (e.g., detonator kick)
@@ -130,7 +146,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
       // mid-fall and post-pop sprites need to participate in this
       // sort or they cover extrusions of the cells below them.
       const render = activeRenderHalves(state, inflight);
-      const items = collectBoardItems(state.board, sprites, effect?.skipCells);
+      const items = postGameOver
+        ? []
+        : collectBoardItems(state.board, sprites, effect?.skipCells);
       if (render !== null) {
         const halfSprites = spritesForHalves(render.active, sprites);
         for (let i = 0; i < render.positions.length; i++) {

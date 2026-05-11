@@ -196,6 +196,8 @@ export function createEffect(
         prevSnapshot,
         sprites,
       );
+    case "game-over":
+      return createGameOverEffect(prevSnapshot, startNow);
     default:
       return null;
   }
@@ -2497,6 +2499,222 @@ function createGravityEffect(
     },
     draw() {},
   };
+}
+
+// Game-over unraveling -------------------------------------------
+//
+// Every occupied cell dissolves into a handful of light orbs that
+// arc outward and upward along the same quadratic-Bezier shape the
+// merge bubbles use. Unlike a merge there is no convergence target:
+// each orb has its own endpoint biased upward, so the swarm reads
+// as the playfield's elements dispersing into the sky.
+//
+// First-iteration focus is the trajectory. Orbs hold constant radius
+// for the whole travel and only alpha-fade in the tail, so the path
+// stays visible end-to-end. Per-cell start times use a simple
+// random jitter; the spec's BFS-from-overflow propagation will
+// layer in once the per-orb motion feels right.
+//
+// Per-cell timeline:
+//   cell.shineStartMs                — sprite begins brightening
+//   cell.burstMs (= start + SHINE)   — sprite vanishes, orbs burst
+//   orb.startMs + orb.travelMs       — orb has reached its endpoint
+//   ..+ UNRAVEL_TAIL_FADE_MS         — orb fully faded
+//
+// Spec: docs/05-animations.md ("Game over").
+
+const UNRAVEL_CELL_JITTER_MS = 180;
+const UNRAVEL_SHINE_MS = 220;
+const UNRAVEL_TRAVEL_MIN_MS = 1900;
+const UNRAVEL_TRAVEL_MAX_MS = 2500;
+const UNRAVEL_TAIL_FADE_MS = 280;
+
+const UNRAVEL_ORBS_PER_CELL = 8;
+// Larger than merge bubbles. The trajectory is the focal point, not
+// a quick flicker — orbs need readable mass the whole way along.
+const UNRAVEL_ORB_RADIUS_MIN_CELLS = 5.0 / REFERENCE_CELL_PX;
+const UNRAVEL_ORB_RADIUS_MAX_CELLS = 7.5 / REFERENCE_CELL_PX;
+
+// Bezier control point: pushed out from the cell in any direction
+// (full 360°), creating the lateral bulge of the arc.
+const UNRAVEL_CONTROL_DIST_MIN_CELLS = 1.4;
+const UNRAVEL_CONTROL_DIST_MAX_CELLS = 2.8;
+// Endpoint angle, measured counter-clockwise from +x. π/2 is
+// straight up; the range below is a wide upper fan (~14°..166°),
+// so every orb drifts upward with horizontal spread.
+const UNRAVEL_END_ANGLE_MIN_RAD = Math.PI / 2 - Math.PI / 2.3;
+const UNRAVEL_END_ANGLE_MAX_RAD = Math.PI / 2 + Math.PI / 2.3;
+const UNRAVEL_END_DIST_MIN_CELLS = 4.5;
+const UNRAVEL_END_DIST_MAX_CELLS = 7.0;
+
+type UnravelOrb = {
+  readonly cellRow: number;
+  readonly cellColumn: number;
+  readonly startMs: number;
+  readonly travelMs: number;
+  readonly controlAngleRad: number;
+  readonly controlDistanceCells: number;
+  readonly endAngleRad: number;
+  readonly endDistanceCells: number;
+  readonly baseRadiusCells: number;
+  readonly hue: "white" | "pale-yellow";
+};
+
+type UnravelCell = {
+  readonly row: number;
+  readonly column: number;
+  readonly shineStartMs: number;
+  readonly burstMs: number;
+  readonly orbs: readonly UnravelOrb[];
+};
+
+function createGameOverEffect(snapshot: State, startNow: number): Effect {
+  const unravelCells: UnravelCell[] = [];
+  const skipCells = new Set<string>();
+  for (let r = 0; r < snapshot.board.length; r++) {
+    const row = snapshot.board[r];
+    for (let c = 0; c < row.length; c++) {
+      const cell = row[c];
+      if (cell.kind === "empty") continue;
+      skipCells.add(cellKey(r, c));
+      const shineStartMs = Math.random() * UNRAVEL_CELL_JITTER_MS;
+      const burstMs = shineStartMs + UNRAVEL_SHINE_MS;
+      // Distribute control angles around the circle so orbs fan out
+      // rather than clustering. Per-orb jitter keeps them un-gridded.
+      const baseControlAngle = Math.random() * Math.PI * 2;
+      const orbs: UnravelOrb[] = [];
+      for (let i = 0; i < UNRAVEL_ORBS_PER_CELL; i++) {
+        const controlAngle =
+          baseControlAngle +
+          (i * (Math.PI * 2)) / UNRAVEL_ORBS_PER_CELL +
+          (Math.random() - 0.5) * 0.4;
+        orbs.push({
+          cellRow: r,
+          cellColumn: c,
+          startMs: burstMs,
+          travelMs: lerp(
+            UNRAVEL_TRAVEL_MIN_MS,
+            UNRAVEL_TRAVEL_MAX_MS,
+            Math.random(),
+          ),
+          controlAngleRad: controlAngle,
+          controlDistanceCells: lerp(
+            UNRAVEL_CONTROL_DIST_MIN_CELLS,
+            UNRAVEL_CONTROL_DIST_MAX_CELLS,
+            Math.random(),
+          ),
+          endAngleRad: lerp(
+            UNRAVEL_END_ANGLE_MIN_RAD,
+            UNRAVEL_END_ANGLE_MAX_RAD,
+            Math.random(),
+          ),
+          endDistanceCells: lerp(
+            UNRAVEL_END_DIST_MIN_CELLS,
+            UNRAVEL_END_DIST_MAX_CELLS,
+            Math.random(),
+          ),
+          baseRadiusCells: lerp(
+            UNRAVEL_ORB_RADIUS_MIN_CELLS,
+            UNRAVEL_ORB_RADIUS_MAX_CELLS,
+            Math.random(),
+          ),
+          hue: Math.random() < 0.55 ? "white" : "pale-yellow",
+        });
+      }
+      unravelCells.push({
+        row: r,
+        column: c,
+        shineStartMs,
+        burstMs,
+        orbs,
+      });
+    }
+  }
+  return {
+    skipCells,
+    getSpriteItems(now, _prev, sprites) {
+      const elapsedMs = now - startNow;
+      const items: RenderItem[] = [];
+      // While the cell is still shining, render its sprite (the
+      // brightening halo is drawn additively on top in draw()).
+      // After burst, the sprite is gone and orbs carry the light.
+      for (const cell of unravelCells) {
+        if (elapsedMs >= cell.burstMs) continue;
+        const boardCell = snapshot.board[cell.row]?.[cell.column];
+        if (!boardCell || boardCell.kind === "empty") continue;
+        const sprite =
+          boardCell.kind === "detonator"
+            ? sprites.detonator
+            : sprites.byTier[boardCell.tier];
+        items.push({ sprite, col: cell.column, row: cell.row });
+      }
+      return items;
+    },
+    draw(ctx, now, _prev, _sprites, cellSize, canvasHeight) {
+      const elapsedMs = now - startNow;
+      // Brightening halos on cells still in their shine phase.
+      // drawShineHalo internally switches to `lighter`, so the sprite
+      // beneath reads as lit up rather than occluded.
+      for (const cell of unravelCells) {
+        if (elapsedMs < cell.shineStartMs) continue;
+        if (elapsedMs >= cell.burstMs) continue;
+        const t = clamp01(
+          (elapsedMs - cell.shineStartMs) / UNRAVEL_SHINE_MS,
+        );
+        const intensity = t * t;
+        const cx = (cell.column + 0.5) * cellSize;
+        const cy = canvasHeight - (cell.row + 0.5) * cellSize;
+        drawShineHalo(ctx, cx, cy, cellSize, intensity);
+      }
+      // Orbs in flight.
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const cell of unravelCells) {
+        if (elapsedMs < cell.burstMs) continue;
+        for (const orb of cell.orbs) {
+          drawUnravelOrb(ctx, orb, elapsedMs, cellSize, canvasHeight);
+        }
+      }
+      ctx.restore();
+    },
+  };
+}
+
+function drawUnravelOrb(
+  ctx: CanvasRenderingContext2D,
+  orb: UnravelOrb,
+  elapsedMs: number,
+  cellSize: number,
+  canvasHeight: number,
+): void {
+  const sinceStart = elapsedMs - orb.startMs;
+  const lifetime = orb.travelMs + UNRAVEL_TAIL_FADE_MS;
+  if (sinceStart < 0 || sinceStart >= lifetime) return;
+  const travelT = clamp01(sinceStart / orb.travelMs);
+  // Ease-out: orb bursts out fast then settles toward its endpoint.
+  const u = 1 - (1 - travelT) * (1 - travelT);
+  const p0x = (orb.cellColumn + 0.5) * cellSize;
+  const p0y = canvasHeight - (orb.cellRow + 0.5) * cellSize;
+  const p1x =
+    p0x + Math.cos(orb.controlAngleRad) * orb.controlDistanceCells * cellSize;
+  const p1y =
+    p0y - Math.sin(orb.controlAngleRad) * orb.controlDistanceCells * cellSize;
+  const p2x =
+    p0x + Math.cos(orb.endAngleRad) * orb.endDistanceCells * cellSize;
+  const p2y =
+    p0y - Math.sin(orb.endAngleRad) * orb.endDistanceCells * cellSize;
+  const oneMinus = 1 - u;
+  const x = oneMinus * oneMinus * p0x + 2 * oneMinus * u * p1x + u * u * p2x;
+  const y = oneMinus * oneMinus * p0y + 2 * oneMinus * u * p1y + u * u * p2y;
+  // Constant radius the whole way — the trajectory is the point of
+  // the animation, and shrinking orbs would camouflage the arc. Tail
+  // fade is alpha only.
+  let alpha = 1;
+  if (sinceStart > orb.travelMs) {
+    const tailT = (sinceStart - orb.travelMs) / UNRAVEL_TAIL_FADE_MS;
+    alpha = (1 - tailT) * (1 - tailT);
+  }
+  drawBubble(ctx, x, y, orb.baseRadiusCells * cellSize, alpha, orb.hue);
 }
 
 // Helpers --------------------------------------------------------

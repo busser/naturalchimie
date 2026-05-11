@@ -3,6 +3,32 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-12 - First pass on the game-over unraveling
+
+Started the end-of-round animation by reusing the merge's signature
+motion. Every occupied cell briefly brightens with a shine halo, then
+its sprite vanishes and a handful of light orbs burst out along
+quadratic Beziers - the same curve shape the merge bubbles trace -
+but instead of converging on a landing cell each orb has its own
+endpoint in an upper fan, so the swarm reads as the playfield
+dispersing into the sky rather than coming together.
+
+This pass focuses on the trajectory rather than the full per-cell
+choreography. Orbs keep a constant radius for the whole travel so the
+arc stays readable end to end; the tail fade is alpha only. Per-cell
+start times use a simple random jitter for now; the spec's
+BFS-from-overflow propagation, the central-orb formation, and the
+modal reveal that overlaps the unraveling tail are all still to come.
+
+The board snapshot at commit still contains every element (per spec,
+nothing about the game-over flow clears the data), so the renderer
+suppresses the board pass until a fresh active piece reappears. That
+keeps state-layer and visual-layer concerns separate: the unravel is
+purely a renderer story, and restart naturally clears the flag the
+moment a new initial state lands. The game-over step's duration is
+now 3200 ms, sized to the longest per-cell timeline; the modal opens
+at commit.
+
 ## 2026-05-12 - Added a dev-mode loss trigger
 
 Testing the game-over overlay shouldn't require actually overflowing
