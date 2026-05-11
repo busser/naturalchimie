@@ -2528,6 +2528,13 @@ const UNRAVEL_SHINE_MS = 220;
 const UNRAVEL_TRAVEL_MIN_MS = 1900;
 const UNRAVEL_TRAVEL_MAX_MS = 2500;
 const UNRAVEL_TAIL_FADE_MS = 280;
+// Radius shrinks over the last stretch of an orb's life, reaching
+// zero exactly when the alpha fade does. Spread over a long window
+// so the dissipation reads as energy slowly running out rather than
+// orbs blinking off in place. The cubic curve keeps most of the
+// visible loss near the end, so the early travel still reads at
+// full mass even though the shrink technically already started.
+const UNRAVEL_SHRINK_MS = 1600;
 
 const UNRAVEL_ORBS_PER_CELL = 8;
 // Larger than merge bubbles. The trajectory is the focal point, not
@@ -2706,15 +2713,26 @@ function drawUnravelOrb(
   const oneMinus = 1 - u;
   const x = oneMinus * oneMinus * p0x + 2 * oneMinus * u * p1x + u * u * p2x;
   const y = oneMinus * oneMinus * p0y + 2 * oneMinus * u * p1y + u * u * p2y;
-  // Constant radius the whole way — the trajectory is the point of
-  // the animation, and shrinking orbs would camouflage the arc. Tail
-  // fade is alpha only.
+  // The orb holds full size for most of the travel so the arc stays
+  // readable, then shrinks and fades together at the end. Radius
+  // hits zero on the same frame alpha does — the orb dies into
+  // nothing rather than blinking off at full size.
   let alpha = 1;
   if (sinceStart > orb.travelMs) {
     const tailT = (sinceStart - orb.travelMs) / UNRAVEL_TAIL_FADE_MS;
     alpha = (1 - tailT) * (1 - tailT);
   }
-  drawBubble(ctx, x, y, orb.baseRadiusCells * cellSize, alpha, orb.hue);
+  const shrinkStartMs = orb.travelMs + UNRAVEL_TAIL_FADE_MS - UNRAVEL_SHRINK_MS;
+  let radiusScale = 1;
+  if (sinceStart > shrinkStartMs) {
+    const shrinkT = clamp01((sinceStart - shrinkStartMs) / UNRAVEL_SHRINK_MS);
+    // ease-in cubic: the dwindle starts gently, then accelerates so
+    // the orb finishes vanishing in lockstep with the alpha fade.
+    radiusScale = 1 - shrinkT * shrinkT * shrinkT;
+  }
+  const radiusPx = orb.baseRadiusCells * cellSize * radiusScale;
+  if (radiusPx < 0.5) return;
+  drawBubble(ctx, x, y, radiusPx, alpha, orb.hue);
 }
 
 // Helpers --------------------------------------------------------

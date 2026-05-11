@@ -3,6 +3,24 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-12 - Shrink unravel orbs as they dissipate
+
+Brought the orbs in line with the spec's "shrink toward radius 0, and
+vanish" beat, and reached for the bittersweet feel the end-of-game
+moment deserves. The first pass kept each orb at full size for the
+whole travel and only alpha-faded its tail, which read as the lights
+blinking off in place rather than dying. Now the radius eases toward
+zero on a cubic curve, hitting zero on the same frame the alpha does,
+so each orb actually collapses into nothing.
+
+The shrink window is 1600 ms, much longer than the 280 ms tail fade
+on its own, so it begins well before the orb reaches its apex. The
+ease-in keeps most of the visible loss near the end - the early
+travel still reads at near-full mass and the trajectory remains
+legible - while the slow dwindle through the back half sells the
+"energy running out" beat. Orbs below half a pixel skip drawing
+to avoid sub-pixel `drawBubble` calls.
+
 ## 2026-05-12 - First pass on the game-over unraveling
 
 Started the end-of-round animation by reusing the merge's signature
