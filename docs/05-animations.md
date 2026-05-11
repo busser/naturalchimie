@@ -26,7 +26,11 @@ hand-drawn charm did not depend on flashy effects.
 | Detonator plunger press | 200 ms |
 | Detonator detonation effects | 1700 ms |
 | Preview slide-out / slide-in | 200 ms each, with ~80 ms gap |
-| Game-over fade | 600 ms |
+| Game-over unravel - BFS step | 80 ms ± 25 ms |
+| Game-over unravel - per cell | 400 ms |
+| Game-over darken fade | 600 ms |
+| Game-over score fade-in | 300 ms |
+| Game-over hint fade-in (600 ms after score) | 300 ms |
 
 These add up: a typical drop with a single 3-element reaction takes
 roughly 120 + 200 + 150 + 80 + (a small gravity fall) ≈ 600–700 ms
@@ -394,21 +398,85 @@ empty during the cascade.
 
 ## Game over
 
-When the lose condition triggers (a stable board has at least one
-element in row 8 or 9):
+When the lose condition fires (a stable board has at least one
+element in row 8 or 9, per `01-gameplay-rules.md` "Lose
+condition"):
 
 1. All gameplay input stops accepting keys.
-2. The board **darkens**: a semi-transparent dark overlay fades in
-   over the playfield over ~600 ms, reducing the playfield to
-   about 50% brightness.
-3. Centered over the playfield, a "Game Over" text appears (in the
-   game's display typeface, large, deep-brown color, slightly
-   tilted for character). Below it, the player's final score in
-   the same typeface, smaller. Below that, in smaller text still:
-   "Press space to play again."
-4. Pressing **space** restarts the round from scratch: empty
-   board, fresh RNG seed, score 0, new active pair, new preview
-   piece. Each restart is a different run.
+2. The **unraveling** begins. The elements that caused the loss
+   (those in rows 8 and 9) start dissolving simultaneously at
+   t=0. The effect propagates cell to cell across the board.
+3. As the unraveling tails off, the game-over reveal fades in
+   over the empty playfield.
+
+### Per-cell unraveling
+
+Each cell's animation runs for ~400 ms:
+
+- **0-120 ms:** the sprite brightens from its normal colors
+  toward pure white. Same curve as the first ~120 ms of the
+  merge's white-bloom phase.
+- **120-200 ms:** the silhouette dissolves into a cell-sized
+  soft white orb with a halo, identical in shape to the orb
+  that ends merge phase 1.
+- **200 ms:** the orb bursts into ~10-20 small light bubbles.
+  Bubble count, ~3 px size, and initial upward velocity match
+  the merge's sparkle particles.
+- **200-400 ms:** the bubbles drift upward, decelerate, shrink
+  toward radius 0, and vanish.
+
+The cell is empty by 400 ms after its animation began.
+
+### Propagation
+
+The unraveling spreads in two phases:
+
+**Phase A. BFS from the overflow.** All elements in rows 8 and
+9 start unraveling at t=0. 80 ms ± 25 ms after each cell
+begins, it triggers its orthogonal occupied neighbors, which
+start their own unraveling and so on. Propagation travels only
+through occupied cells; empty cells do not transmit.
+
+**Phase B. Straggler sweep (only if needed).** 80 ms after the
+last cell in phase A has started, any elements still standing
+on the board begin unraveling together, with ±50 ms per-cell
+jitter so the wave reads organic rather than mechanical. This
+is rare on typical lose-state boards (gravity tends to leave
+columns dense and orthogonally connected), but defined for
+completeness.
+
+The unraveling ends when the last cell's bubbles vanish.
+
+### The reveal
+
+The reveal overlaps the tail of the unraveling:
+
+- **~300 ms before the last cell finishes:** a semi-transparent
+  dark overlay fades in over the playfield over 600 ms, reducing
+  the playfield to about 50% brightness.
+- **The moment the last bubble vanishes:** the player's final
+  score fades in over 300 ms, centered over the playfield, in
+  the game's display typeface, large, deep-brown, slightly
+  tilted for character. No headline above it: the score is the
+  reveal.
+- **600 ms after the score:** "Press space to play again" fades
+  in over 300 ms beneath the score, smaller, in the same
+  typeface.
+
+The score shown is the score from before the drop that ended
+the round. Per `01-gameplay-rules.md` "Scoring," the score does
+not change at all on a losing drop.
+
+### Input
+
+The space key is **ignored** until the "Press space to play
+again" hint is visible. Reflexive keypresses during the
+unraveling, the darken, or the score reveal are dropped, not
+buffered.
+
+Once the hint is visible, pressing **space** restarts the round
+from scratch: empty board, fresh RNG seed, score 0, new active
+pair, new preview piece. Each restart is a different run.
 
 The game-over screen is the only modal state in the game.
 
