@@ -3,6 +3,44 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-12 - Propagate the game-over unravel from the overflow
+
+The first pass of the unraveling lit every occupied cell at once with
+a small random jitter. On lose-state boards the result felt like a
+synchronized flash rather than something spreading. The spec calls
+for the effect to propagate from the overflow rows outward through
+orthogonally-connected occupied cells, so I replaced the random
+jitter with a Dijkstra-style BFS: every cell in rows 7-8 starts at
+t=0, and each cell wakes its occupied neighbors after a sampled
+delay. A straggler-sweep phase catches any occupied cells the BFS
+couldn't reach, which is rare on real lose-state boards but the spec
+defines it for completeness.
+
+The per-edge delay took a few passes to tune. The spec's starting
+value of 80 ms with ±25 ms jitter felt near-instantaneous on dense
+boards (top to bottom in under a second). Successive bumps landed on
+a uniform 250-1250 ms per edge, a 5:1 max-to-min ratio. Neighbors of
+one cell can fire within a quarter-second of each other or a full
+second apart, and far cells on a chain of short delays can outrun
+near cells on a chain of long ones. The front reads as a genuine
+scatter rather than a rank-by-rank advance. Spec's timing table and
+Phase A prose updated to match the tuned values.
+
+While I was there, I also fixed the reveal timing. The dark overlay
+and score had been firing at a fixed worst-case budget, so on most
+boards they appeared a beat after the last orb had already faded.
+Now the step's duration is computed from the actual sampled plan -
+longest BFS start time plus the longest per-orb travel and tail fade
+- so the reveal fires the moment the last orb finishes. The shared
+plan is built once per snapshot, cached in a WeakMap, and read by
+both the renderer (to draw the cells) and the driver (to time the
+commit). Pulling the plan into its own module was forced by a
+circular import the first attempt introduced: effects.ts reads
+constants from driver.ts at module top-level, so wiring driver.ts to
+import duration logic back from effects.ts caused a TDZ crash on
+page load depending on entry order. With the plan owning its own
+module, neither side depends on the other.
+
 ## 2026-05-12 - Shrink unravel orbs as they dissipate
 
 Brought the orbs in line with the spec's "shrink toward radius 0, and

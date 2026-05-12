@@ -5,6 +5,7 @@
 // See 08-software-design.md ("Animation layer").
 
 import { SPAWN_ROW, type State, type Step } from '../core/state';
+import { gameOverEffectDurationMs } from '../renderer/game-over-plan';
 import type { Store } from '../store';
 
 const SHIFT_DURATION_MS = 150;
@@ -88,11 +89,11 @@ export const DETONATOR_EFFECTS_MS = 1700;
 export const DETONATOR_SHOCKWAVE_MS_PER_CELL = 50;
 
 // Per 05-animations.md "Game over": every element on the board
-// unravels into light before the modal appears. Sized to fit the
-// effect's longest per-cell timeline (random shine-start jitter +
-// shine + max orb travel + tail fade). Tuned for a slow, mournful
-// dissolution — this is the final beat of the round.
-export const GAME_OVER_DURATION_MS = 3200;
+// unravels into light before the modal appears. The duration is
+// computed per-snapshot from the actual BFS propagation + per-orb
+// travel times sampled in effects.ts, so the step commits — and
+// the reveal fades in — the moment the last orb finishes fading,
+// not after a fixed worst-case budget.
 
 // Time the fireball spends descending from landingRow to the floor.
 // Derived by treating the dynamite's drop as a partial ease-in over a
@@ -147,7 +148,7 @@ export function createDriver(
         if (step === null) return;
         current = { step, prevSnapshot: store.getSnapshot(), startNow: now };
       }
-      const duration = stepDuration(current.step);
+      const duration = stepDuration(current.step, current.prevSnapshot);
       if (now - current.startNow < duration) return;
       const committed = current.step;
       store.commitNextStep();
@@ -158,7 +159,7 @@ export function createDriver(
 
   function getInFlight(now: number): InFlight | null {
     if (current === null) return null;
-    const duration = stepDuration(current.step);
+    const duration = stepDuration(current.step, current.prevSnapshot);
     const t = duration === 0
       ? 1
       : Math.min(1, (now - current.startNow) / duration);
@@ -174,7 +175,7 @@ export function createDriver(
   };
 }
 
-function stepDuration(step: Step): number {
+function stepDuration(step: Step, prevSnapshot: State): number {
   switch (step.event.kind) {
     case 'pair-shift':
       return SHIFT_DURATION_MS;
@@ -213,6 +214,6 @@ function stepDuration(step: Step): number {
     case 'detonate':
       return DETONATOR_PRESS_MS + DETONATOR_EFFECTS_MS;
     case 'game-over':
-      return GAME_OVER_DURATION_MS;
+      return gameOverEffectDurationMs(prevSnapshot);
   }
 }

@@ -33,6 +33,13 @@ import {
   type State,
   type Step,
 } from "../core/state";
+import {
+  getUnravelPlan,
+  UNRAVEL_SHINE_MS,
+  UNRAVEL_SHRINK_MS,
+  UNRAVEL_TAIL_FADE_MS,
+  type UnravelOrb,
+} from "./game-over-plan";
 
 // Reference cell size the original pixel-tuned values were authored
 // against. Constants below were divided by this once so they read as
@@ -2501,141 +2508,16 @@ function createGravityEffect(
   };
 }
 
-// Game-over unraveling -------------------------------------------
-//
-// Every occupied cell dissolves into a handful of light orbs that
-// arc outward and upward along the same quadratic-Bezier shape the
-// merge bubbles use. Unlike a merge there is no convergence target:
-// each orb has its own endpoint biased upward, so the swarm reads
-// as the playfield's elements dispersing into the sky.
-//
-// First-iteration focus is the trajectory. Orbs hold constant radius
-// for the whole travel and only alpha-fade in the tail, so the path
-// stays visible end-to-end. Per-cell start times use a simple
-// random jitter; the spec's BFS-from-overflow propagation will
-// layer in once the per-orb motion feels right.
-//
-// Per-cell timeline:
-//   cell.shineStartMs                — sprite begins brightening
-//   cell.burstMs (= start + SHINE)   — sprite vanishes, orbs burst
-//   orb.startMs + orb.travelMs       — orb has reached its endpoint
-//   ..+ UNRAVEL_TAIL_FADE_MS         — orb fully faded
-//
+// Game-over unraveling renderer. The plan (per-cell timings, per-orb
+// trajectories) is built and cached in game-over-plan.ts; this just
+// reads the plan and draws each phase on top of the board.
 // Spec: docs/05-animations.md ("Game over").
 
-const UNRAVEL_CELL_JITTER_MS = 180;
-const UNRAVEL_SHINE_MS = 220;
-const UNRAVEL_TRAVEL_MIN_MS = 1900;
-const UNRAVEL_TRAVEL_MAX_MS = 2500;
-const UNRAVEL_TAIL_FADE_MS = 280;
-// Radius shrinks over the last stretch of an orb's life, reaching
-// zero exactly when the alpha fade does. Spread over a long window
-// so the dissipation reads as energy slowly running out rather than
-// orbs blinking off in place. The cubic curve keeps most of the
-// visible loss near the end, so the early travel still reads at
-// full mass even though the shrink technically already started.
-const UNRAVEL_SHRINK_MS = 1600;
-
-const UNRAVEL_ORBS_PER_CELL = 8;
-// Larger than merge bubbles. The trajectory is the focal point, not
-// a quick flicker — orbs need readable mass the whole way along.
-const UNRAVEL_ORB_RADIUS_MIN_CELLS = 5.0 / REFERENCE_CELL_PX;
-const UNRAVEL_ORB_RADIUS_MAX_CELLS = 7.5 / REFERENCE_CELL_PX;
-
-// Bezier control point: pushed out from the cell in any direction
-// (full 360°), creating the lateral bulge of the arc.
-const UNRAVEL_CONTROL_DIST_MIN_CELLS = 1.4;
-const UNRAVEL_CONTROL_DIST_MAX_CELLS = 2.8;
-// Endpoint angle, measured counter-clockwise from +x. π/2 is
-// straight up; the range below is a wide upper fan (~14°..166°),
-// so every orb drifts upward with horizontal spread.
-const UNRAVEL_END_ANGLE_MIN_RAD = Math.PI / 2 - Math.PI / 2.3;
-const UNRAVEL_END_ANGLE_MAX_RAD = Math.PI / 2 + Math.PI / 2.3;
-const UNRAVEL_END_DIST_MIN_CELLS = 4.5;
-const UNRAVEL_END_DIST_MAX_CELLS = 7.0;
-
-type UnravelOrb = {
-  readonly cellRow: number;
-  readonly cellColumn: number;
-  readonly startMs: number;
-  readonly travelMs: number;
-  readonly controlAngleRad: number;
-  readonly controlDistanceCells: number;
-  readonly endAngleRad: number;
-  readonly endDistanceCells: number;
-  readonly baseRadiusCells: number;
-  readonly hue: "white" | "pale-yellow";
-};
-
-type UnravelCell = {
-  readonly row: number;
-  readonly column: number;
-  readonly shineStartMs: number;
-  readonly burstMs: number;
-  readonly orbs: readonly UnravelOrb[];
-};
-
 function createGameOverEffect(snapshot: State, startNow: number): Effect {
-  const unravelCells: UnravelCell[] = [];
+  const unravelCells = getUnravelPlan(snapshot).cells;
   const skipCells = new Set<string>();
-  for (let r = 0; r < snapshot.board.length; r++) {
-    const row = snapshot.board[r];
-    for (let c = 0; c < row.length; c++) {
-      const cell = row[c];
-      if (cell.kind === "empty") continue;
-      skipCells.add(cellKey(r, c));
-      const shineStartMs = Math.random() * UNRAVEL_CELL_JITTER_MS;
-      const burstMs = shineStartMs + UNRAVEL_SHINE_MS;
-      // Distribute control angles around the circle so orbs fan out
-      // rather than clustering. Per-orb jitter keeps them un-gridded.
-      const baseControlAngle = Math.random() * Math.PI * 2;
-      const orbs: UnravelOrb[] = [];
-      for (let i = 0; i < UNRAVEL_ORBS_PER_CELL; i++) {
-        const controlAngle =
-          baseControlAngle +
-          (i * (Math.PI * 2)) / UNRAVEL_ORBS_PER_CELL +
-          (Math.random() - 0.5) * 0.4;
-        orbs.push({
-          cellRow: r,
-          cellColumn: c,
-          startMs: burstMs,
-          travelMs: lerp(
-            UNRAVEL_TRAVEL_MIN_MS,
-            UNRAVEL_TRAVEL_MAX_MS,
-            Math.random(),
-          ),
-          controlAngleRad: controlAngle,
-          controlDistanceCells: lerp(
-            UNRAVEL_CONTROL_DIST_MIN_CELLS,
-            UNRAVEL_CONTROL_DIST_MAX_CELLS,
-            Math.random(),
-          ),
-          endAngleRad: lerp(
-            UNRAVEL_END_ANGLE_MIN_RAD,
-            UNRAVEL_END_ANGLE_MAX_RAD,
-            Math.random(),
-          ),
-          endDistanceCells: lerp(
-            UNRAVEL_END_DIST_MIN_CELLS,
-            UNRAVEL_END_DIST_MAX_CELLS,
-            Math.random(),
-          ),
-          baseRadiusCells: lerp(
-            UNRAVEL_ORB_RADIUS_MIN_CELLS,
-            UNRAVEL_ORB_RADIUS_MAX_CELLS,
-            Math.random(),
-          ),
-          hue: Math.random() < 0.55 ? "white" : "pale-yellow",
-        });
-      }
-      unravelCells.push({
-        row: r,
-        column: c,
-        shineStartMs,
-        burstMs,
-        orbs,
-      });
-    }
+  for (const cell of unravelCells) {
+    skipCells.add(cellKey(cell.row, cell.column));
   }
   return {
     skipCells,

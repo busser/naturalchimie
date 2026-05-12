@@ -26,7 +26,7 @@ hand-drawn charm did not depend on flashy effects.
 | Detonator plunger press | 200 ms |
 | Detonator detonation effects | 1700 ms |
 | Preview slide-out / slide-in | 200 ms each, with ~80 ms gap |
-| Game-over unravel - BFS step | 80 ms ± 25 ms |
+| Game-over unravel - BFS step | 750 ms ± 500 ms (uniform 250-1250 ms) |
 | Game-over unravel - per cell | 400 ms |
 | Game-over darken fade | 600 ms |
 | Game-over score fade-in | 300 ms |
@@ -432,14 +432,15 @@ The cell is empty by 400 ms after its animation began.
 The unraveling spreads in two phases:
 
 **Phase A. BFS from the overflow.** All elements in rows 8 and
-9 start unraveling at t=0. 80 ms ± 25 ms after each cell
-begins, it triggers its orthogonal occupied neighbors, which
-start their own unraveling and so on. Propagation travels only
-through occupied cells; empty cells do not transmit.
+9 start unraveling at t=0. A uniform 250-1250 ms (mean 750 ms)
+after each cell begins, it triggers its orthogonal occupied
+neighbors, which start their own unraveling and so on.
+Propagation travels only through occupied cells; empty cells
+do not transmit.
 
-**Phase B. Straggler sweep (only if needed).** 80 ms after the
+**Phase B. Straggler sweep (only if needed).** 250 ms after the
 last cell in phase A has started, any elements still standing
-on the board begin unraveling together, with ±50 ms per-cell
+on the board begin unraveling together, with ±120 ms per-cell
 jitter so the wave reads organic rather than mechanical. This
 is rare on typical lose-state boards (gravity tends to leave
 columns dense and orthogonally connected), but defined for
