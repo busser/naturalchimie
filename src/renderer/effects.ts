@@ -2579,9 +2579,16 @@ function drawUnravelOrb(
   const sinceStart = elapsedMs - orb.startMs;
   const lifetime = orb.travelMs + UNRAVEL_TAIL_FADE_MS;
   if (sinceStart < 0 || sinceStart >= lifetime) return;
-  const travelT = clamp01(sinceStart / orb.travelMs);
-  // Ease-out: orb bursts out fast then settles toward its endpoint.
-  const u = 1 - (1 - travelT) * (1 - travelT);
+  // Stretch travel across the full lifetime (travel + tail fade) so
+  // the orb is still in motion at the moment it vanishes, rather than
+  // parking at the endpoint while the alpha fades.
+  const travelT = clamp01(sinceStart / lifetime);
+  // Gentle ease-out: a 50/50 blend of linear and quadratic ease-out.
+  // Pure linear paired with the shrink reads as accelerating recession;
+  // a full ease-out reads as visibly settling at the endpoint. The blend
+  // gives a soft deceleration without either pitfall, and leaves ~1/3
+  // of peak velocity at u=1 so the orb still drifts as it disappears.
+  const u = 0.5 * travelT + 0.5 * (1 - (1 - travelT) * (1 - travelT));
   const p0x = (orb.cellColumn + 0.5) * cellSize;
   const p0y = canvasHeight - (orb.cellRow + 0.5) * cellSize;
   const p1x =
@@ -2608,9 +2615,10 @@ function drawUnravelOrb(
   let radiusScale = 1;
   if (sinceStart > shrinkStartMs) {
     const shrinkT = clamp01((sinceStart - shrinkStartMs) / UNRAVEL_SHRINK_MS);
-    // ease-in cubic: the dwindle starts gently, then accelerates so
-    // the orb finishes vanishing in lockstep with the alpha fade.
-    radiusScale = 1 - shrinkT * shrinkT * shrinkT;
+    // Linear: radius loss is spread evenly across the shrink window
+    // so the dwindle reads from the start rather than clustering at
+    // the end. Reaches zero in lockstep with the alpha fade.
+    radiusScale = 1 - shrinkT;
   }
   const radiusPx = orb.baseRadiusCells * cellSize * radiusScale;
   if (radiusPx < 0.5) return;

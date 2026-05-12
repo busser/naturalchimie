@@ -3,6 +3,28 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-12 - Tuned the game-over orb dissipation
+
+Reworked the curves that govern how unravel orbs lose mass and motion.
+The previous pass had three issues that compounded into a "blink off at
+the endpoint" feel: the cubic ease-in on the shrink kept the orbs at
+near-full size until almost the end, the quadratic ease-out on travel
+settled them visibly into their endpoints, and the bezier travel ended
+at `travelMs` while the alpha fade continued for another 280 ms with
+the orb parked in place. Each piece in isolation looked fine; together
+they read as the lights stopping and then disappearing.
+
+Switched the shrink to a linear ramp so the radius loss distributes
+evenly across the 900 ms window, replaced the travel ease-out with a
+50/50 blend of linear and quadratic ease-out (pure linear paired with
+the shrink reads as accelerating recession; full ease-out reads as
+settling), and stretched the travel parameter across the full lifetime
+rather than just `travelMs` so the bezier endpoint is reached at the
+moment of vanishing. With the blend curve that leaves ~1/3 of peak
+velocity at the end, so the orb is still drifting when it fades out.
+Same arc distances and travel-time bounds as before; only the curves
+changed.
+
 ## 2026-05-12 - Propagate the game-over unravel from the overflow
 
 The first pass of the unraveling lit every occupied cell at once with

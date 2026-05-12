@@ -57,10 +57,10 @@ export const UNRAVEL_TAIL_FADE_MS = 280;
 // Radius shrinks over the last stretch of an orb's life, reaching
 // zero exactly when the alpha fade does. Spread over a long window
 // so the dissipation reads as energy slowly running out rather than
-// orbs blinking off in place. The cubic curve keeps most of the
-// visible loss near the end, so the early travel still reads at
-// full mass even though the shrink technically already started.
-export const UNRAVEL_SHRINK_MS = 1600;
+// orbs blinking off in place. Linear ramp: the loss is distributed
+// evenly across the window so the orb visibly thins from the start
+// of the shrink rather than clinging to full mass until the very end.
+export const UNRAVEL_SHRINK_MS = 900;
 
 const UNRAVEL_ORBS_PER_CELL = 8;
 // Larger than merge bubbles. The trajectory is the focal point, not
