@@ -155,7 +155,6 @@ body {
 .game-over {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -209,7 +208,13 @@ body {
 
 .game-over__hint {
   font-size: 14px;
+  opacity: 0;
+  transition: opacity 600ms ease-out;
+}
+
+.game-over.is-visible .game-over__hint {
   opacity: 0.85;
+  transition-delay: 800ms;
 }
 
 :root[data-layout='landscape'] .game-over__hint-portrait,

@@ -3,6 +3,14 @@
 A running log of work done on the Naturalchimie clone. Newest entries
 at the top.
 
+## 2026-05-12 - Cleaned up the game-over overlay reveal
+
+Two small touches on the game-over overlay. The board is empty by the
+time the overlay fades in, so the 50% black backdrop was darkening
+nothing - dropped it. And staged the hint text to fade in 800 ms after
+the rest of the panel, so the title and final score land first and the
+"press space" line arrives once the eye has settled.
+
 ## 2026-05-12 - Tuned the game-over orb dissipation
 
 Reworked the curves that govern how unravel orbs lose mass and motion.
