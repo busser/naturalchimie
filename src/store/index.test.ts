@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { parseBoard } from '../core/board-text';
 import { createStore } from './index';
+import type { State } from '../core/state';
 
 // Drains step-by-step the way the renderer driver does: peek, commit,
 // repeat until the queue is empty.
@@ -83,6 +85,32 @@ describe('store / input buffering across pairs', () => {
     // Now a fresh shift should be accepted and produce a step.
     store.dispatch({ kind: 'shift', direction: 'left' });
     expect(store.peekNextStep()).not.toBeNull();
+  });
+
+  it('resumes from a hydrated snapshot instead of generating an initial state', () => {
+    const hydrated: State = {
+      board: parseBoard(`
+        . . . . . . .
+        . . . . . . .
+        . . . . . . .
+        . . . . . . .
+        . . . . . . .
+        . . . . . . .
+        1 2 3 . . . .
+      `),
+      active: {
+        kind: 'pair',
+        column: 3,
+        orientation: 'horizontal',
+        first: 4,
+        second: 5,
+      },
+      preview: { kind: 'pair', first: 6, second: 7 },
+      comboScore: 80,
+      score: 99,
+    };
+    const store = createStore(1, hydrated);
+    expect(store.getSnapshot()).toBe(hydrated);
   });
 
   it('restart reopens the buffer for the new round', () => {

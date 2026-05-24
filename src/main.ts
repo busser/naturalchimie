@@ -8,6 +8,13 @@ import { createLayout } from './layout';
 import { createRenderer } from './renderer/playfield';
 import { createPreviewRenderer } from './renderer/preview';
 import { createStore } from './store';
+import {
+  clearRun,
+  formatLocalTimestamp,
+  loadRun,
+  recordRunInLeaderboard,
+  saveRun,
+} from './store/persistence';
 import { startVersionCheck } from './version-check';
 
 function requireElement<T extends HTMLElement>(
@@ -19,6 +26,18 @@ function requireElement<T extends HTMLElement>(
     throw new Error(`main: #${id} not found (or wrong type)`);
   }
   return el;
+}
+
+// Some browsers (e.g. Safari in lockdown private mode) throw on the
+// `localStorage` property read itself rather than only on subsequent
+// operations. Return null in that case so the rest of the app can
+// skip persistence entirely.
+function safeLocalStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 function hideSplash(): void {
@@ -47,7 +66,13 @@ async function main(): Promise<void> {
   // than flashing the default landscape rules during the load.
   const layout = createLayout();
   const sprites = await loadSprites();
-  const store = createStore(Date.now());
+  // localStorage may be unavailable (private browsing, disabled).
+  // The persistence helpers all degrade silently to no-ops when the
+  // Storage handle throws, but we also guard the access itself for
+  // browsers that throw on the property read.
+  const storage = safeLocalStorage();
+  const resumeFrom = storage ? (loadRun(storage) ?? undefined) : undefined;
+  const store = createStore(Date.now(), resumeFrom);
   const favicon = createFavicon(sprites);
 
   let gameOverShown = false;
@@ -71,8 +96,25 @@ async function main(): Promise<void> {
     gameOverEl.hidden = true;
   }
 
+  // The spawn step commits the post-cascade stable board with a
+  // freshly drawn active piece — the exact moment the spec wants to
+  // snapshot (docs/10-persistence.md "When to save"). Game-over
+  // clears the run key and records the leaderboard entry as a paired
+  // operation so the next launch can never resume a finished run.
   const driver = createDriver(store, (step) => {
+    if (step.event.kind === 'spawn') {
+      if (storage) saveRun(storage, step.snapshot);
+      return;
+    }
     if (step.event.kind === 'game-over') {
+      if (storage) {
+        clearRun(storage);
+        recordRunInLeaderboard(
+          storage,
+          step.snapshot,
+          formatLocalTimestamp(new Date()),
+        );
+      }
       showGameOver(step.snapshot.score);
     }
   });
@@ -98,6 +140,9 @@ async function main(): Promise<void> {
   const touch = attachTouch(store, layout, playfieldEl);
 
   function restart(): void {
+    // Clear before restart so the next spawn step (which will save
+    // the fresh round) doesn't race against a stale key.
+    if (storage) clearRun(storage);
     driver.reset();
     store.restart(Date.now());
     favicon.reset();

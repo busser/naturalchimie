@@ -35,8 +35,20 @@ export type Store = {
   forceGameOver(): void;
 };
 
-export function createStore(seed: number): Store {
-  let [committed, rng] = createInitialState(createRng(seed));
+// `resumeFrom` skips the fresh-round initial state and starts the
+// store from a previously committed snapshot (typically loaded from
+// localStorage). The RNG still seeds from `seed`: the PRNG state is
+// intentionally not persisted (docs/10-persistence.md "RNG state is
+// not persisted"), so post-resume spawns diverge from the original
+// run.
+export function createStore(seed: number, resumeFrom?: State): Store {
+  let rng = createRng(seed);
+  let committed: State;
+  if (resumeFrom !== undefined) {
+    committed = resumeFrom;
+  } else {
+    [committed, rng] = createInitialState(rng);
+  }
   const inputQueue: Input[] = [];
   const stepQueue: Step[] = [];
   // Closes the moment a `drop` is dispatched (not when it applies — the
