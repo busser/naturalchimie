@@ -238,11 +238,15 @@ matches the current layout:
 - Portrait layout: "Double-tap to play again."
 - Landscape layout: "Press SPACE to play again."
 
-The game has no buttons or other UI chrome anywhere else, so
-introducing one only on the game-over screen would break the
-game's visual identity. A double-tap, by contrast, fits naturally
-into the gesture vocabulary the player has been using all round,
-just as SPACE fits into the keyboard vocabulary.
+The only buttons in the game are two small icons tucked into the
+parchment chrome for restart and leaderboard access (see
+`11-restart-and-leaderboard.md`); the playfield itself stays
+icon-free. Adding a third button on the game-over screen would
+either need a new visual style (clashing with the rest) or copy
+the icon vocabulary (which doesn't fit the retry action). A
+double-tap, by contrast, fits naturally into the gesture
+vocabulary the player has been using all round, just as SPACE
+fits into the keyboard vocabulary.
 
 A double-tap is two single taps within a short time window
 (roughly 400 ms). The first tap may produce a subtle

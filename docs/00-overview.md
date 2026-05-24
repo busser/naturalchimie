@@ -32,12 +32,21 @@ In scope:
   animated downward dynamite explosion.
 - A responsive layout that adapts to portrait or landscape viewports,
   and touch input that works alongside keyboard input on any device.
+- Local persistence of the in-progress round (so a reload mid-round
+  resumes where the player left off) and a top-10 leaderboard of
+  finished runs. Both live in the browser's `localStorage`; nothing
+  is sent to a server and nothing syncs between devices.
+- Two small icons in the sidebar (landscape) or bottom strip
+  (portrait) giving access to restart and to the leaderboard, with
+  matching keyboard shortcuts. The playfield itself stays
+  icon-free.
 
 Out of scope:
 
 - Audio (music and sound effects).
-- Persistence of any kind. The game is fully stateless across sessions —
-  closing the tab loses everything. There is no high-score table.
+- Any persistence beyond the in-progress round and the local
+  top-10 leaderboard: no accounts, no server sync, no cross-device
+  history, no global high-score table.
 - The sidebar character's reaction animations.
 - Any metagame: inventory, cauldron, recipes, gold collection, levels,
   quests, multiplayer, or progression between rounds.
@@ -64,7 +73,7 @@ coding agent) working alongside a human reviewer. It is intentionally
 prescriptive: rules are stated as testable invariants, numbers are given
 where possible, and ambiguity is called out explicitly when it remains.
 
-The spec is split across eight files. They are meant to be read
+The spec is split across ten files. They are meant to be read
 in order the first time, then referenced individually thereafter:
 
 1. `00-overview.md` — this file.
@@ -82,6 +91,11 @@ in order the first time, then referenced individually thereafter:
 8. `09-responsive-layout.md` — the portrait layout and the touch
    input mode, plus the rules for switching between layouts and
    input modes at runtime.
+9. `10-persistence.md` — what gets saved to `localStorage` and when:
+   the in-progress round snapshot and the top-10 leaderboard.
+10. `11-restart-and-leaderboard.md` — the restart confirmation
+    overlay, the leaderboard view, and how their icons sit in the
+    parchment chrome of each layout.
 
 A separate file, `06-acceptance-tests.md`, lists concrete scenarios for
 implementers to turn into automated tests. It is not part of the
