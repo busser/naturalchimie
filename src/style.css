@@ -89,8 +89,13 @@ body {
      used elsewhere in the portrait layout. layout.ts's HEIGHT_DIVISOR
      accounts for this thicker strip. */
   height: calc(var(--cell) * 2.4);
-  padding: calc(var(--cell) * 0.2) calc(var(--cell) * 0.5);
-  gap: calc(var(--cell) * 0.5);
+  /* Horizontal padding equals the row gap so the score (centered in
+     its flex:1 region on the left) and the action stack (centered in
+     its flex:1 region on the right) end up equidistant from both
+     the preview recess and the panel edge. Vertical padding stays at
+     0.2 cells per the strip-height math above. */
+  padding: calc(var(--cell) * 0.2) calc(var(--cell) * 0.4);
+  gap: calc(var(--cell) * 0.4);
   align-items: center;
 }
 
@@ -127,6 +132,75 @@ body {
 
 .preview canvas {
   display: block;
+}
+
+/* Restart and leaderboard icon buttons. In landscape they sit in the
+   lower portion of the parchment sidebar (the slot reserved for the
+   character portrait, currently empty); in portrait they stack
+   vertically on the far right of the bottom strip. */
+.actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  /* Push the row to the bottom of the column-flex sidebar in landscape.
+     Overridden in portrait below. */
+  margin-top: auto;
+  gap: calc(var(--cell) * 0.3);
+}
+
+:root[data-layout='portrait'] .actions {
+  flex-direction: column;
+  margin-top: 0;
+  gap: calc(var(--cell) * 0.2);
+  /* Mirror the score's flex:1 so the action stack occupies a column
+     of identical width on the right; align-items:center keeps the
+     buttons their natural size (default `stretch` would widen them). */
+  flex: 1;
+  align-items: center;
+}
+
+.actions__button {
+  /* Button reset. The parchment shows through; only the SVG ink and
+     the hover/active feedback are visible. */
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: calc(var(--cell) * 0.1);
+  margin: 0;
+  color: var(--score-ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 120ms ease-out, background-color 120ms ease-out;
+  /* Suppress the iOS tap highlight; we draw our own pressed state. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.actions__button svg {
+  display: block;
+  /* These controls aren't part of the core loop; keeping the icons
+     small lets them recede into the parchment chrome rather than
+     competing with the score and preview for attention. */
+  width: calc(var(--cell) * 0.5);
+  height: calc(var(--cell) * 0.5);
+}
+
+.actions__button:hover {
+  /* Subtle warm glow on hover, per docs/11-restart-and-leaderboard.md. */
+  background: rgba(240, 232, 208, 0.35);
+}
+
+.actions__button:focus-visible {
+  outline: 2px solid var(--score-ink);
+  outline-offset: 2px;
+}
+
+.actions__button:active {
+  /* Brief pressed-state inversion, per the spec. */
+  background: var(--score-ink);
+  color: var(--filigree);
 }
 
 /* Sized in cell-units rather than implicitly from the canvas child
@@ -219,6 +293,61 @@ body {
 
 :root[data-layout='landscape'] .game-over__hint-portrait,
 :root[data-layout='portrait'] .game-over__hint-landscape {
+  display: none;
+}
+
+/* Restart confirmation overlay. Mirrors .game-over visually but adds a
+   dim wash behind the panel so the paused board reads as truly frozen,
+   per docs/11-restart-and-leaderboard.md. */
+.restart-confirm {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+  pointer-events: none;
+}
+
+.restart-confirm[hidden] {
+  display: none;
+}
+
+.restart-confirm.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.restart-confirm__panel {
+  background: var(--parchment);
+  border: 2px solid var(--parchment-recess);
+  border-radius: 8px;
+  padding: 24px 36px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--score-ink);
+  text-align: center;
+  max-width: calc(var(--cell) * 6);
+}
+
+.restart-confirm__title {
+  font-size: 28px;
+  font-weight: bold;
+  line-height: 1.1;
+}
+
+.restart-confirm__hint {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+:root[data-layout='landscape'] .restart-confirm__hint-portrait,
+:root[data-layout='portrait'] .restart-confirm__hint-landscape {
   display: none;
 }
 

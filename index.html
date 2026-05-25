@@ -18,6 +18,61 @@
         <div class="preview" id="preview">
           <canvas id="preview-canvas"></canvas>
         </div>
+        <div class="actions">
+          <button
+            type="button"
+            class="actions__button"
+            id="restart-button"
+            aria-label="Restart run"
+            title="Restart (R)"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M6.67742 20.5673C2.53141 18.0212 0.758026 12.7584 2.71678 8.1439C4.87472 3.0601 10.7453 0.68822 15.8291 2.84617C20.9129 5.00412 23.2848 10.8747 21.1269 15.9585C20.2837 17.945 18.8736 19.5174 17.1651 20.5673"
+              />
+              <path d="M17 16V20.4C17 20.7314 17.2686 21 17.6 21H22" />
+              <path d="M12 22.01L12.01 21.9989" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="actions__button"
+            id="leaderboard-button"
+            aria-label="Leaderboard"
+            title="Leaderboard (L)"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M15 19H9V12.5V8.6C9 8.26863 9.26863 8 9.6 8H14.4C14.7314 8 15 8.26863 15 8.6V14.5V19Z"
+              />
+              <path d="M15 5H9" />
+              <path
+                d="M20.4 19H15V15.1C15 14.7686 15.2686 14.5 15.6 14.5H20.4C20.7314 14.5 21 14.7686 21 15.1V18.4C21 18.7314 20.7314 19 20.4 19Z"
+              />
+              <path
+                d="M9 19V13.1C9 12.7686 8.73137 12.5 8.4 12.5H3.6C3.26863 12.5 3 12.7686 3 13.1V18.4C3 18.7314 3.26863 19 3.6 19H9Z"
+              />
+            </svg>
+          </button>
+        </div>
       </aside>
       <main class="playfield">
         <canvas id="playfield-canvas"></canvas>
@@ -32,6 +87,24 @@
               <span class="game-over__hint-portrait"
                 >Double-tap to play again.</span
               >
+            </div>
+          </div>
+        </div>
+        <div
+          class="restart-confirm"
+          id="restart-confirm"
+          aria-hidden="true"
+          hidden
+        >
+          <div class="restart-confirm__panel">
+            <div class="restart-confirm__title">Restart this run?</div>
+            <div class="restart-confirm__hint">
+              <span class="restart-confirm__hint-landscape">
+                SPACE to restart, ESC to cancel.
+              </span>
+              <span class="restart-confirm__hint-portrait">
+                Double-tap to restart, tap outside to cancel.
+              </span>
             </div>
           </div>
         </div>

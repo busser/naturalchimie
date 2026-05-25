@@ -73,11 +73,13 @@ export function attachTouch(
   store: Store,
   layout: LayoutModule,
   element: HTMLElement,
+  isPaused: () => boolean = () => false,
 ): Touch {
   let gesture: Gesture | null = null;
 
   function onTouchStart(e: TouchEvent): void {
     if (gesture !== null) return;
+    if (isPaused()) return;
     const t = e.changedTouches[0];
     if (!t) return;
     e.preventDefault();
@@ -188,6 +190,7 @@ export function attachTouch(
       // whatever has already been dispatched (touchend clears
       // `gesture`).
       if (gesture === null) return;
+      if (isPaused()) return;
       if (store.peekNextStep() !== null) return;
       if (gesture.lastColumn === gesture.targetColumn) return;
       if (gesture.lastColumn < gesture.targetColumn) {

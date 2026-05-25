@@ -60,6 +60,12 @@ async function main(): Promise<void> {
   const scoreEl = requireElement('score', HTMLElement);
   const gameOverEl = requireElement('game-over', HTMLElement);
   const gameOverScoreEl = requireElement('game-over-score', HTMLElement);
+  const restartConfirmEl = requireElement('restart-confirm', HTMLElement);
+  const restartButtonEl = requireElement('restart-button', HTMLButtonElement);
+  const leaderboardButtonEl = requireElement(
+    'leaderboard-button',
+    HTMLButtonElement,
+  );
 
   // Set --cell and data-layout on the root before awaiting sprites,
   // so the first paint already matches the user's orientation rather
@@ -74,6 +80,30 @@ async function main(): Promise<void> {
   const resumeFrom = storage ? (loadRun(storage) ?? undefined) : undefined;
   const store = createStore(Date.now(), resumeFrom);
   const favicon = createFavicon(sprites);
+
+  // Pause clock for the restart-confirm overlay. The frame loop feeds
+  // `effectiveNow(now)` to the driver and renderers instead of the raw
+  // requestAnimationFrame timestamp; while paused, that value is
+  // frozen, so the driver's `now - startNow` doesn't advance and
+  // animations resume in place when the overlay closes (per
+  // docs/11-restart-and-leaderboard.md "Interaction with game state").
+  let pausedAt: number | null = null;
+  let pauseOffsetMs = 0;
+  function effectiveNow(now: number): number {
+    return (pausedAt ?? now) - pauseOffsetMs;
+  }
+  function isPausedFn(): boolean {
+    return pausedAt !== null;
+  }
+  function pauseGame(now: number): void {
+    if (pausedAt !== null) return;
+    pausedAt = now;
+  }
+  function resumeGame(now: number): void {
+    if (pausedAt === null) return;
+    pauseOffsetMs += now - pausedAt;
+    pausedAt = null;
+  }
 
   let gameOverShown = false;
   function showGameOver(score: number): void {
@@ -136,8 +166,28 @@ async function main(): Promise<void> {
     renderer.resize(cellSize);
     previewRenderer.resize(cellSize);
   });
-  const keyboard = attachKeyboard(store);
-  const touch = attachTouch(store, layout, playfieldEl);
+  const keyboard = attachKeyboard(store, isPausedFn);
+  const touch = attachTouch(store, layout, playfieldEl, isPausedFn);
+
+  let restartConfirmShown = false;
+  function showRestartConfirm(): void {
+    if (restartConfirmShown) return;
+    restartConfirmShown = true;
+    restartConfirmEl.setAttribute('aria-hidden', 'false');
+    restartConfirmEl.hidden = false;
+    requestAnimationFrame(() => {
+      restartConfirmEl.classList.add('is-visible');
+    });
+    pauseGame(performance.now());
+  }
+  function hideRestartConfirm(): void {
+    if (!restartConfirmShown) return;
+    restartConfirmShown = false;
+    restartConfirmEl.setAttribute('aria-hidden', 'true');
+    restartConfirmEl.classList.remove('is-visible');
+    restartConfirmEl.hidden = true;
+    resumeGame(performance.now());
+  }
 
   function restart(): void {
     // Clear before restart so the next spawn step (which will save
@@ -147,10 +197,23 @@ async function main(): Promise<void> {
     store.restart(Date.now());
     favicon.reset();
     hideGameOver();
+    // Fresh round starts with a clean clock; drop any accrued pause
+    // without going through resumeGame (no leftover offset to fold in).
+    restartConfirmShown = false;
+    restartConfirmEl.setAttribute('aria-hidden', 'true');
+    restartConfirmEl.classList.remove('is-visible');
+    restartConfirmEl.hidden = true;
+    pausedAt = null;
+    pauseOffsetMs = 0;
   }
 
   window.addEventListener('keydown', (e) => {
     if (e.key !== ' ' && e.key !== 'Spacebar') return;
+    if (restartConfirmShown) {
+      e.preventDefault();
+      restart();
+      return;
+    }
     if (gameOverShown) {
       e.preventDefault();
       restart();
@@ -161,6 +224,30 @@ async function main(): Promise<void> {
       store.randomizePreview();
     }
   });
+
+  // R toggles the restart-confirm overlay; ESC cancels it. Per spec
+  // these shortcuts are active during a round and on the game-over
+  // screen (docs/11-restart-and-leaderboard.md).
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      if (restartConfirmShown) hideRestartConfirm();
+      else showRestartConfirm();
+      return;
+    }
+    if (e.key === 'Escape' && restartConfirmShown) {
+      e.preventDefault();
+      hideRestartConfirm();
+    }
+  });
+
+  restartButtonEl.addEventListener('click', () => {
+    // Tapping the icon again is one of the spec's cancel paths.
+    if (restartConfirmShown) hideRestartConfirm();
+    else showRestartConfirm();
+  });
+  // Leaderboard button is a placeholder until the overlay exists.
+  leaderboardButtonEl.addEventListener('click', () => {});
 
   if (import.meta.env.DEV) {
     window.addEventListener('keydown', (e) => {
@@ -199,14 +286,71 @@ async function main(): Promise<void> {
     }
   });
 
+  // Restart-confirm overlay input. Mouse: clicking outside the panel
+  // cancels (SPACE confirms via the keyboard branch). Touch: any
+  // double-tap on the overlay confirms; a single tap outside the panel
+  // cancels after the double-tap window elapses (so a player can still
+  // upgrade their first outside-tap into a confirm).
+  let lastRestartTapTime = -Infinity;
+  let pendingRestartCancel: number | null = null;
+  function clearPendingRestartCancel(): void {
+    if (pendingRestartCancel !== null) {
+      window.clearTimeout(pendingRestartCancel);
+      pendingRestartCancel = null;
+    }
+  }
+  restartConfirmEl.addEventListener('click', (e) => {
+    if (!restartConfirmShown) return;
+    // Clicks on the panel (e.target is a descendant) leave the
+    // overlay open; only the dim-wash background dismisses.
+    if (e.target === restartConfirmEl) hideRestartConfirm();
+  });
+  restartConfirmEl.addEventListener('touchstart', (e) => {
+    e.stopPropagation();
+  });
+  restartConfirmEl.addEventListener('touchmove', (e) => {
+    e.stopPropagation();
+  });
+  restartConfirmEl.addEventListener('touchcancel', (e) => {
+    e.stopPropagation();
+  });
+  restartConfirmEl.addEventListener('touchend', (e) => {
+    e.stopPropagation();
+    if (!restartConfirmShown) return;
+    e.preventDefault();
+    const now = e.timeStamp;
+    if (now - lastRestartTapTime <= DOUBLE_TAP_WINDOW_MS) {
+      lastRestartTapTime = -Infinity;
+      clearPendingRestartCancel();
+      restart();
+      return;
+    }
+    lastRestartTapTime = now;
+    const target = e.target;
+    const onPanel =
+      target instanceof Element &&
+      target.closest('.restart-confirm__panel') !== null;
+    if (!onPanel) {
+      clearPendingRestartCancel();
+      pendingRestartCancel = window.setTimeout(() => {
+        pendingRestartCancel = null;
+        hideRestartConfirm();
+      }, DOUBLE_TAP_WINDOW_MS);
+    }
+  });
+
   let lastScore = -1;
   let splashHidden = false;
   function frame(now: number): void {
-    driver.tick(now);
+    // `eff` freezes during a pause so the driver and renderers see
+    // wall-clock time pause along with input (per
+    // docs/11-restart-and-leaderboard.md "Interaction with game state").
+    const eff = effectiveNow(now);
+    driver.tick(eff);
     keyboard.tick();
     touch.tick();
-    renderer.draw(now);
-    previewRenderer.draw(now);
+    renderer.draw(eff);
+    previewRenderer.draw(eff);
     const snapshot = store.getSnapshot();
     // The core's `score` updates live on every step's snapshot, but
     // ticking the sidebar numeral that often is distracting. Only
@@ -217,7 +361,7 @@ async function main(): Promise<void> {
     // drops). On game-over `active` stays null and no spawn step is
     // queued, so the sidebar holds the pre-drop value; the
     // game-over modal shows the final score separately above.
-    const inFlight = driver.getInFlight(now);
+    const inFlight = driver.getInFlight(eff);
     const settling = inFlight !== null && inFlight.step.event.kind === 'spawn';
     if (snapshot.score !== lastScore && (settling || snapshot.active !== null)) {
       scoreEl.textContent = String(snapshot.score);

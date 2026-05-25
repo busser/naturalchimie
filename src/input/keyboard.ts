@@ -14,7 +14,10 @@ export type Keyboard = {
   detach(): void;
 };
 
-export function attachKeyboard(store: Store): Keyboard {
+export function attachKeyboard(
+  store: Store,
+  isPaused: () => boolean = () => false,
+): Keyboard {
   const heldKeys = new Set<string>();
 
   function onKeyDown(e: KeyboardEvent): void {
@@ -23,6 +26,7 @@ export function attachKeyboard(store: Store): Keyboard {
     if (input === null) return;
     e.preventDefault();
     heldKeys.add(e.key);
+    if (isPaused()) return;
     store.dispatch(input);
   }
 
@@ -39,6 +43,7 @@ export function attachKeyboard(store: Store): Keyboard {
       // returns null only when both the input buffer and the step
       // queue are empty, so this respects the "fire when idle and
       // buffer empty" rule from 08-software-design.md.
+      if (isPaused()) return;
       if (store.peekNextStep() !== null) return;
       for (const key of heldKeys) {
         const input = mapKey(key);
