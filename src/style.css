@@ -351,6 +351,100 @@ body {
   display: none;
 }
 
+/* Leaderboard overlay. Same dim-wash + parchment panel as
+   .restart-confirm; the panel is wider to hold up to ten rows of
+   ranked entries. */
+.leaderboard {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+  pointer-events: none;
+}
+
+.leaderboard[hidden] {
+  display: none;
+}
+
+.leaderboard.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.leaderboard__panel {
+  background: var(--parchment);
+  border: 2px solid var(--parchment-recess);
+  border-radius: 8px;
+  padding: calc(var(--cell) * 0.5) calc(var(--cell) * 0.55);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  color: var(--score-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: calc(var(--cell) * 0.3);
+  max-width: calc(var(--cell) * 7.5);
+  max-height: calc(var(--cell) * 11);
+}
+
+.leaderboard__title {
+  font-size: calc(var(--cell) * 0.55);
+  font-weight: bold;
+  text-align: center;
+  letter-spacing: 1px;
+  transform: rotate(-2deg);
+}
+
+.leaderboard__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.05);
+  overflow-y: auto;
+}
+
+.leaderboard__row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 0.2);
+  font-size: calc(var(--cell) * 0.3);
+  line-height: 1;
+}
+
+.leaderboard__icon {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.leaderboard__score {
+  font-weight: bold;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  flex: 1 1 auto;
+}
+
+.leaderboard__date {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.leaderboard__empty {
+  text-align: center;
+  font-size: calc(var(--cell) * 0.32);
+  padding: calc(var(--cell) * 0.4) calc(var(--cell) * 0.2);
+  opacity: 0.85;
+}
+
+.leaderboard__empty[hidden] {
+  display: none;
+}
+
 /* Solid frame-brown overlay that paints before any JS runs, hiding
    the bare landscape layout that would otherwise flash on portrait
    viewports while sprites load. main.ts adds .is-loaded after the

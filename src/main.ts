@@ -1,10 +1,13 @@
 import './style.css';
 import { createDriver } from './animation/driver';
-import { loadSprites } from './assets/sprite-loader';
+import { loadSprites, type SpriteAtlas } from './assets/sprite-loader';
+import { drawSpriteAtCell } from './assets/sprite-renderer';
+import type { Tier } from './core/state';
 import { createFavicon } from './favicon';
 import { attachKeyboard } from './input/keyboard';
 import { attachTouch } from './input/touch';
 import { createLayout } from './layout';
+import { applyCanvasSize } from './renderer/canvas';
 import { createRenderer } from './renderer/playfield';
 import { createPreviewRenderer } from './renderer/preview';
 import { createStore } from './store';
@@ -12,8 +15,10 @@ import {
   clearRun,
   formatLocalTimestamp,
   loadRun,
+  loadScores,
   recordRunInLeaderboard,
   saveRun,
+  type LeaderboardEntry,
 } from './store/persistence';
 import { startVersionCheck } from './version-check';
 
@@ -65,6 +70,12 @@ async function main(): Promise<void> {
   const leaderboardButtonEl = requireElement(
     'leaderboard-button',
     HTMLButtonElement,
+  );
+  const leaderboardEl = requireElement('leaderboard', HTMLElement);
+  const leaderboardListEl = requireElement('leaderboard-list', HTMLUListElement);
+  const leaderboardEmptyEl = requireElement(
+    'leaderboard-empty',
+    HTMLDivElement,
   );
 
   // Set --cell and data-layout on the root before awaiting sprites,
@@ -165,6 +176,18 @@ async function main(): Promise<void> {
   layout.subscribe(({ cellSize }) => {
     renderer.resize(cellSize);
     previewRenderer.resize(cellSize);
+    // Icon canvases hold a bitmap sized to the previous cell, so a
+    // viewport rotation while the leaderboard is open would leave
+    // them at the wrong scale. Cheap to rebuild — at most ten rows.
+    if (leaderboardShown && storage) {
+      populateLeaderboard(
+        leaderboardListEl,
+        leaderboardEmptyEl,
+        loadScores(storage),
+        sprites,
+        cellSize,
+      );
+    }
   });
   const keyboard = attachKeyboard(store, isPausedFn);
   const touch = attachTouch(store, layout, playfieldEl, isPausedFn);
@@ -186,6 +209,34 @@ async function main(): Promise<void> {
     restartConfirmEl.setAttribute('aria-hidden', 'true');
     restartConfirmEl.classList.remove('is-visible');
     restartConfirmEl.hidden = true;
+    resumeGame(performance.now());
+  }
+
+  let leaderboardShown = false;
+  function showLeaderboard(): void {
+    if (leaderboardShown) return;
+    const entries = storage ? loadScores(storage) : [];
+    populateLeaderboard(
+      leaderboardListEl,
+      leaderboardEmptyEl,
+      entries,
+      sprites,
+      layout.get().cellSize,
+    );
+    leaderboardShown = true;
+    leaderboardEl.setAttribute('aria-hidden', 'false');
+    leaderboardEl.hidden = false;
+    requestAnimationFrame(() => {
+      leaderboardEl.classList.add('is-visible');
+    });
+    pauseGame(performance.now());
+  }
+  function hideLeaderboard(): void {
+    if (!leaderboardShown) return;
+    leaderboardShown = false;
+    leaderboardEl.setAttribute('aria-hidden', 'true');
+    leaderboardEl.classList.remove('is-visible');
+    leaderboardEl.hidden = true;
     resumeGame(performance.now());
   }
 
@@ -225,29 +276,61 @@ async function main(): Promise<void> {
     }
   });
 
-  // R toggles the restart-confirm overlay; ESC cancels it. Per spec
-  // these shortcuts are active during a round and on the game-over
-  // screen (docs/11-restart-and-leaderboard.md).
+  // R toggles the restart-confirm overlay; L toggles the leaderboard;
+  // ESC dismisses whichever is up. Only one overlay can be open at a
+  // time, so each opener no-ops while the other overlay is showing
+  // (docs/11-restart-and-leaderboard.md "Edge cases"). The shortcuts
+  // are active during a round and on the game-over screen.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'r' || e.key === 'R') {
       e.preventDefault();
+      if (leaderboardShown) return;
       if (restartConfirmShown) hideRestartConfirm();
       else showRestartConfirm();
       return;
     }
-    if (e.key === 'Escape' && restartConfirmShown) {
+    if (e.key === 'l' || e.key === 'L') {
       e.preventDefault();
-      hideRestartConfirm();
+      if (restartConfirmShown) return;
+      if (leaderboardShown) hideLeaderboard();
+      else showLeaderboard();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (restartConfirmShown) {
+        e.preventDefault();
+        hideRestartConfirm();
+      } else if (leaderboardShown) {
+        e.preventDefault();
+        hideLeaderboard();
+      }
     }
   });
 
   restartButtonEl.addEventListener('click', () => {
     // Tapping the icon again is one of the spec's cancel paths.
+    if (leaderboardShown) return;
     if (restartConfirmShown) hideRestartConfirm();
     else showRestartConfirm();
   });
-  // Leaderboard button is a placeholder until the overlay exists.
-  leaderboardButtonEl.addEventListener('click', () => {});
+  leaderboardButtonEl.addEventListener('click', () => {
+    if (restartConfirmShown) return;
+    if (leaderboardShown) hideLeaderboard();
+    else showLeaderboard();
+  });
+
+  // Leaderboard dismiss-on-tap-outside. Mouse: clicking the dim-wash
+  // (not the panel) closes the overlay. Touch: stopPropagation keeps
+  // taps off the playfield's gesture handler; the synthesized click
+  // then runs through the same path.
+  leaderboardEl.addEventListener('click', (e) => {
+    if (!leaderboardShown) return;
+    if (e.target === leaderboardEl) hideLeaderboard();
+  });
+  leaderboardEl.addEventListener('touchstart', (e) => e.stopPropagation());
+  leaderboardEl.addEventListener('touchmove', (e) => e.stopPropagation());
+  leaderboardEl.addEventListener('touchcancel', (e) => e.stopPropagation());
+  leaderboardEl.addEventListener('touchend', (e) => e.stopPropagation());
 
   if (import.meta.env.DEV) {
     window.addEventListener('keydown', (e) => {
@@ -375,6 +458,135 @@ async function main(): Promise<void> {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+}
+
+// Icons render at half the playfield cell size, with symmetric
+// headroom on all four sides so each cell footprint is centered in the
+// canvas vertically. The preview frame uses asymmetric vertical
+// headroom because it has its own visual rest position
+// (src/renderer/preview.ts), but leaderboard rows use flex
+// `align-items: center` and need the sprite to read as vertically
+// centered with the row's text.
+//
+// The tally renders `count` overlapping copies of the run's highest
+// tier inside a fixed horizontal span (so the score/date columns stay
+// aligned regardless of count), with the whole cluster centered in
+// that span. Up to ~5 sprites fit at the default shift; beyond that,
+// the per-sprite shift tightens so the pile still fits. Each sprite
+// alternates a small vertical offset to break the rasterized look.
+const LEADERBOARD_ICON_SCALE = 0.5;
+const LEADERBOARD_ICON_HEADROOM = 0.5;
+// Width of the area the sprite tally always occupies, in icon-cells.
+// Equals "5 sprites at 45% shift" — the prior fixed layout.
+const LEADERBOARD_TALLY_SPAN = 1 + 4 * 0.45;
+const LEADERBOARD_DEFAULT_SHIFT = 0.45;
+// Vertical alternation amplitude as a fraction of icon-cell. Capped so
+// even a sprite with top extrusion (e.g. a potion cork) stays inside
+// the headroom when shifted upward.
+const LEADERBOARD_ALTERNATION = 0.1;
+
+function populateLeaderboard(
+  listEl: HTMLUListElement,
+  emptyEl: HTMLDivElement,
+  entries: readonly LeaderboardEntry[],
+  sprites: SpriteAtlas,
+  cellSize: number,
+): void {
+  listEl.replaceChildren();
+  if (entries.length === 0) {
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+  const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'short' });
+  const numFmt = new Intl.NumberFormat();
+  for (const entry of entries) {
+    listEl.appendChild(
+      buildLeaderboardRow(entry, sprites, cellSize, dateFmt, numFmt),
+    );
+  }
+}
+
+function buildLeaderboardRow(
+  entry: LeaderboardEntry,
+  sprites: SpriteAtlas,
+  cellSize: number,
+  dateFmt: Intl.DateTimeFormat,
+  numFmt: Intl.NumberFormat,
+): HTMLLIElement {
+  const row = document.createElement('li');
+  row.className = 'leaderboard__row';
+
+  const iconEl = document.createElement('canvas');
+  iconEl.className = 'leaderboard__icon';
+  drawLeaderboardTally(
+    iconEl,
+    entry.highestTier,
+    entry.highestTierCount,
+    sprites,
+    cellSize,
+  );
+  row.appendChild(iconEl);
+
+  const scoreEl = document.createElement('span');
+  scoreEl.className = 'leaderboard__score';
+  scoreEl.textContent = numFmt.format(entry.score);
+  row.appendChild(scoreEl);
+
+  const dateEl = document.createElement('span');
+  dateEl.className = 'leaderboard__date';
+  const parsed = new Date(entry.timestamp);
+  dateEl.textContent = Number.isFinite(parsed.getTime())
+    ? dateFmt.format(parsed)
+    : '';
+  row.appendChild(dateEl);
+
+  return row;
+}
+
+function drawLeaderboardTally(
+  canvas: HTMLCanvasElement,
+  tier: number,
+  count: number,
+  sprites: SpriteAtlas,
+  cellSize: number,
+): void {
+  const iconCell = cellSize * LEADERBOARD_ICON_SCALE;
+  const headroom = iconCell * LEADERBOARD_ICON_HEADROOM;
+  const tallySpanPx = iconCell * LEADERBOARD_TALLY_SPAN;
+  const cssWidth = tallySpanPx + 2 * headroom;
+  const cssHeight = iconCell + 2 * headroom;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  applyCanvasSize(canvas, ctx, cssWidth, cssHeight);
+  // Pathologically empty board: highestTier is 0 and there's nothing
+  // to draw. Leave the slot blank so column alignment is preserved.
+  if (!Number.isInteger(tier) || tier < 1 || tier > 12) return;
+  if (!Number.isInteger(count) || count <= 0) return;
+
+  const sprite = sprites.byTier[tier as Tier];
+  // Cap per-step shift at the default so small counts don't fan out
+  // across the whole span; tighten once we'd run out of room.
+  const shift =
+    count > 1
+      ? Math.min(
+          LEADERBOARD_DEFAULT_SHIFT,
+          (LEADERBOARD_TALLY_SPAN - 1) / (count - 1),
+        )
+      : 0;
+  const clusterWidthPx = iconCell * (1 + (count - 1) * shift);
+  const clusterLeftPx = headroom + (tallySpanPx - clusterWidthPx) / 2;
+  const alternationPx = LEADERBOARD_ALTERNATION * iconCell;
+  for (let i = 0; i < count; i++) {
+    const yOffset = (i % 2 === 0 ? -1 : 1) * alternationPx;
+    drawSpriteAtCell(
+      ctx,
+      sprite,
+      clusterLeftPx + i * shift * iconCell,
+      headroom + yOffset,
+      iconCell,
+    );
+  }
 }
 
 void main();
