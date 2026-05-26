@@ -26,11 +26,13 @@ hand-drawn charm did not depend on flashy effects.
 | Detonator plunger press | 200 ms |
 | Detonator detonation effects | 1700 ms |
 | Preview slide-out / slide-in | 200 ms each, with ~80 ms gap |
-| Game-over unravel - BFS step | 750 ms ± 500 ms (uniform 250-1250 ms) |
-| Game-over unravel - per cell | 400 ms |
-| Game-over darken fade | 600 ms |
-| Game-over score fade-in | 300 ms |
-| Game-over hint fade-in (600 ms after score) | 300 ms |
+| Game-over shine stagger - per row from overflow | 180 ms ± 75 ms |
+| Game-over converging bubble travel | 550-900 ms |
+| Game-over central orb fade + shrink | 350 ms |
+| Game-over dissolve bubble travel | 1900-2500 ms |
+| Game-over dissolve bubble shrink + fade tail | 280 ms (shrink starts ~900 ms before fade end) |
+| Game-over modal fade-in | 600 ms |
+| Game-over hint fade-in (800 ms after modal) | 600 ms |
 
 These add up: a typical drop with a single 3-element reaction takes
 roughly 120 + 200 + 150 + 80 + (a small gravity fall) ≈ 600–700 ms
@@ -403,81 +405,95 @@ element in row 8 or 9, per `01-gameplay-rules.md` "Lose
 condition"):
 
 1. All gameplay input stops accepting keys.
-2. The **unraveling** begins. The elements that caused the loss
-   (those in rows 8 and 9) start dissolving simultaneously at
-   t=0. The effect propagates cell to cell across the board.
-3. As the unraveling tails off, the game-over reveal fades in
-   over the empty playfield.
+2. The **converge** begins: every element on the board takes
+   part in one giant merge that targets the center of the
+   visible playfield (row 4, column 4).
+3. The moment the last bubble arrives, the central orb
+   dissolves: a swarm of small light bubbles spawns from
+   its position and drifts upward off the playfield, while
+   the orb itself fades alpha and shrinks linearly to zero
+   over the same 350 ms - as if its mass were being drained
+   by the bubbles emanating from it. The shrink absorbs the
+   lingering absorption pulse into one fluid motion.
+4. As the last drift bubble fades, the game-over modal
+   appears over the empty playfield.
 
-### Per-cell unraveling
+### One big merge
 
-Each cell's animation runs for ~400 ms:
+The animation reuses the merge primitives - shine halos,
+bubbles on Bezier arcs, and a central orb that grows in
+bumps as bubbles arrive - with three differences:
 
-- **0-120 ms:** the sprite brightens from its normal colors
-  toward pure white. Same curve as the first ~120 ms of the
-  merge's white-bloom phase.
-- **120-200 ms:** the silhouette dissolves into a cell-sized
-  soft white orb with a halo, identical in shape to the orb
-  that ends merge phase 1.
-- **200 ms:** the orb bursts into ~10-20 small light bubbles.
-  Bubble count, ~3 px size, and initial upward velocity match
-  the merge's sparkle particles.
-- **200-400 ms:** the bubbles drift upward, decelerate, shrink
-  toward radius 0, and vanish.
+- **Every occupied cell on the board** is a contributor,
+  including cells in the overflow rows.
+- **All bubbles converge on the center of the playfield**
+  (row 4, column 4), regardless of where the loss happened.
+- **The orb dissolves instead of popping.** At the moment the
+  last bubble arrives, a swarm of small light bubbles spawns
+  from the orb's position and drifts upward along Bezier arcs
+  while the central orb fades out behind them. The drift
+  bubbles shrink and fade together at the end of their lives;
+  nothing replaces the orb.
 
-The cell is empty by 400 ms after its animation began.
+Sprite radii and control-point distances of the **converging**
+bubbles match the merge animation, but travel times are
+roughly doubled (550-900 ms instead of 280-480 ms) - the
+corner-to-center distance is ~6 cells and the merge's pace
+made the fastest paths feel brutal across that span. With
+~50 cells contributing ~200 bubbles,
+the orb during arrival can stack a large pulse from concurrent
+absorptions, so the rendered radius is clamped to a hard peak
+of ~0.9 cells (~1.8 cells across). The drift bubbles have
+their own sizing: a touch larger than merge bubbles (5-7.5 px
+at the reference cell size), 36 of them, fanning upward in a
+wide ~150° arc over 1.9-2.5 seconds before shrinking to zero
+and fading.
 
-### Propagation
+### Stagger
 
-The unraveling spreads in two phases:
+Cells do not all start shining at the same instant. The shine
+begins at the overflow rows (where the loss originated) and
+staggers downward, one row at a time, by ~180 ms ± 75 ms:
 
-**Phase A. BFS from the overflow.** All elements in rows 8 and
-9 start unraveling at t=0. A uniform 250-1250 ms (mean 750 ms)
-after each cell begins, it triggers its orthogonal occupied
-neighbors, which start their own unraveling and so on.
-Propagation travels only through occupied cells; empty cells
-do not transmit.
+- Cells in rows 8-9 (overflow zone) start at t=0.
+- Cells in row 7 start ~180 ms later.
+- Cells in row 1 (the floor) start ~1.3 s later.
 
-**Phase B. Straggler sweep (only if needed).** 250 ms after the
-last cell in phase A has started, any elements still standing
-on the board begin unraveling together, with ±120 ms per-cell
-jitter so the wave reads organic rather than mechanical. This
-is rare on typical lose-state boards (gravity tends to leave
-columns dense and orthogonally connected), but defined for
-completeness.
+The stagger reads as a sweep down the board: the elements that
+caused the loss start dissolving first, and the wave rolls
+downward through the rest of the playfield. There is no
+horizontal stagger - within a row, cells shine together.
 
-The unraveling ends when the last cell's bubbles vanish.
+Each cell's bubbles emit when its own shine completes (140 ms
+after that cell started shining), so the bubble flight from
+different rows overlaps heavily in the air.
 
 ### The reveal
 
-The reveal overlaps the tail of the unraveling:
+The moment the last droplet finishes fading, the game-over
+step commits and the modal fades in:
 
-- **~300 ms before the last cell finishes:** a semi-transparent
-  dark overlay fades in over the playfield over 600 ms, reducing
-  the playfield to about 50% brightness.
-- **The moment the last bubble vanishes:** the player's final
-  score fades in over 300 ms, centered over the playfield, in
-  the game's display typeface, large, deep-brown, slightly
-  tilted for character. No headline above it: the score is the
-  reveal.
-- **600 ms after the score:** "Press space to play again" fades
-  in over 300 ms beneath the score, smaller, in the same
-  typeface.
+- **0-600 ms after the pop ends:** the modal opacity tweens
+  from 0 to 1. The panel carries the player's final score,
+  large, deep-brown, slightly tilted for character.
+- **800 ms after the modal begins:** "Press space to play
+  again" fades in beneath the score over 600 ms, smaller, in
+  the same typeface.
 
 The score shown is the score from before the drop that ended
-the round. Per `01-gameplay-rules.md` "Scoring," the score does
-not change at all on a losing drop.
+the round. Per `01-gameplay-rules.md` "Scoring," the score
+does not change at all on a losing drop.
 
 ### Input
 
-The space key is **ignored** until the "Press space to play
-again" hint is visible. Reflexive keypresses during the
-unraveling, the darken, or the score reveal are dropped, not
-buffered.
+The space key is **ignored** until the modal is fully visible.
+Reflexive keypresses during the converge or the modal fade
+are dropped, not buffered.
 
-Once the hint is visible, pressing **space** restarts the round
-from scratch: empty board, fresh RNG seed, score 0, new active
-pair, new preview piece. Each restart is a different run.
+Once the hint is visible, pressing **space** restarts the
+round from scratch: empty board, fresh RNG seed, score 0, new
+active pair, new preview piece. Each restart is a different
+run.
 
 The game-over screen is the only modal state in the game.
 

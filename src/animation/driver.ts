@@ -89,11 +89,11 @@ export const DETONATOR_EFFECTS_MS = 1700;
 export const DETONATOR_SHOCKWAVE_MS_PER_CELL = 50;
 
 // Per 05-animations.md "Game over": every element on the board
-// unravels into light before the modal appears. The duration is
-// computed per-snapshot from the actual BFS propagation + per-orb
-// travel times sampled in effects.ts, so the step commits — and
-// the reveal fades in — the moment the last orb finishes fading,
-// not after a fixed worst-case budget.
+// converges into one big merge at the center, then pops to nothing
+// before the modal appears. The duration is computed per-snapshot
+// from the staggered shine starts + per-bubble travel times sampled
+// in game-over-plan.ts, so the step commits - and the reveal fades
+// in - the moment the last droplet has faded.
 
 // Time the fireball spends descending from landingRow to the floor.
 // Derived by treating the dynamite's drop as a partial ease-in over a

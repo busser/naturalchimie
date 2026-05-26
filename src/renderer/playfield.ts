@@ -83,8 +83,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
   let effect: Effect | null = null;
   let effectStep: Step | null = null;
   // Once a game-over step commits, the snapshot's board is intact but
-  // the unravel has dissolved every element on screen, so the normal
-  // board pass would pop them back in (dimmed) beneath the modal. We
+  // the converge animation has dissolved every element on screen, so
+  // the normal board pass would pop them back in beneath the modal. We
   // suppress the board pass until a fresh active piece appears (i.e.,
   // restart drops a new initial state in). No state-level change to
   // the snapshot; this flag stays in the renderer.

@@ -34,11 +34,11 @@ import {
   type Step,
 } from "../core/state";
 import {
-  getUnravelPlan,
-  UNRAVEL_SHINE_MS,
-  UNRAVEL_SHRINK_MS,
-  UNRAVEL_TAIL_FADE_MS,
-  type UnravelOrb,
+  DISSOLVE_SHRINK_MS,
+  DISSOLVE_TAIL_FADE_MS,
+  ORB_FADE_MS,
+  getGameOverPlan,
+  type DissolveBubble,
 } from "./game-over-plan";
 
 // Reference cell size the original pixel-tuned values were authored
@@ -47,6 +47,29 @@ import {
 // them scale across viewport sizes while reproducing the original
 // pixel values exactly at cellSize = 48.
 const REFERENCE_CELL_PX = 48;
+
+// Shared merge timing/sizing lives in ./merge-constants so the game-
+// over plan can reuse it without pulling in this module (which would
+// cycle through driver.ts). Tuning constants that are only used here
+// stay below.
+
+import {
+  BUBBLES_PER_CELL,
+  BUBBLE_BASE_RADIUS_MAX_CELLS,
+  BUBBLE_BASE_RADIUS_MIN_CELLS,
+  BUBBLE_SCATTER_DISTANCE_MAX_CELLS,
+  BUBBLE_SCATTER_DISTANCE_MIN_CELLS,
+  BUBBLE_TRAVEL_MAX_MS,
+  BUBBLE_TRAVEL_MIN_MS,
+  DROPLET_BASE_RADIUS_MAX_CELLS,
+  DROPLET_BASE_RADIUS_MIN_CELLS,
+  DROPLET_COUNT_PER_GROUP,
+  DROPLET_LIFETIME_MS,
+  DROPLET_SCATTER_DISTANCE_MAX_CELLS,
+  DROPLET_SCATTER_DISTANCE_MIN_CELLS,
+  POP_DURATION_MS,
+  SHINE_DURATION_MS,
+} from "./merge-constants";
 
 // Merge animation phases ----------------------------------------
 //
@@ -83,19 +106,6 @@ const REFERENCE_CELL_PX = 48;
 // SHINE_DURATION_MS + BUBBLE_TRAVEL_MAX_MS + POP_DURATION_MS +
 // DROPLET_LIFETIME_MS.
 
-const SHINE_DURATION_MS = 140;
-
-const BUBBLES_PER_CELL = 4;
-const BUBBLE_TRAVEL_MIN_MS = 280;
-const BUBBLE_TRAVEL_MAX_MS = 480;
-// The Bezier control point sits at cell + scatterDir * scatterDistance.
-// The visible apex of the curve is roughly halfway between cell and
-// the control point, so this number is the "how far does P1 push out"
-// rather than "how far the bubble travels outward".
-const BUBBLE_SCATTER_DISTANCE_MIN_CELLS = 1.1;
-const BUBBLE_SCATTER_DISTANCE_MAX_CELLS = 2.0;
-const BUBBLE_BASE_RADIUS_MIN_CELLS = 4.0 / REFERENCE_CELL_PX;
-const BUBBLE_BASE_RADIUS_MAX_CELLS = 6.0 / REFERENCE_CELL_PX;
 const BUBBLE_HALO_RADIUS_FACTOR = 2.5;
 // Slight growth toward arrival — bubble gathers energy as it pulls in.
 const BUBBLE_ARRIVAL_GROWTH = 0.35;
@@ -106,31 +116,28 @@ const CENTRAL_ORB_BASE_RADIUS_CELLS = 3 / REFERENCE_CELL_PX;
 // blew the orb past a full cell. sqrt keeps the central orb visibly
 // growing without dwarfing the playfield.
 const CENTRAL_ORB_GROWTH_CELLS = 2.8 / REFERENCE_CELL_PX;
+// Cap on the natural (pre-pulse, pre-pop-swell) orb radius. Normal
+// merges (a few cells) sit well below this; the game-over converge
+// (every cell on the board) would otherwise grow the orb past two
+// cells wide just from sqrt-growth. Set so POP_PEAK_SCALE * the cap
+// equals CENTRAL_ORB_PEAK_RADIUS_CELLS - the droplet emission ring
+// then sits exactly on the visible membrane.
+const CENTRAL_ORB_MAX_RADIUS_CELLS = 0.58;
+// Hard cap on the rendered orb radius after pulse and pop-swell.
+// The pulse alone can stack to 3-4x with hundreds of bubbles, so a
+// natural-growth cap isn't enough on its own. Game-over clamps the
+// final radius here so the orb never reads as bigger than ~1.8 cells
+// across. Normal merges peak below this and are unaffected.
+const CENTRAL_ORB_PEAK_RADIUS_CELLS = 0.9;
 const CENTRAL_ORB_HALO_RADIUS_FACTOR = 2.0;
 // Each arrival kicks a transient size pulse on the central orb so the
 // merge bumps are visible. Pulses from concurrent arrivals sum.
 const CENTRAL_ORB_PULSE_DURATION_MS = 170;
 const CENTRAL_ORB_PULSE_AMOUNT = 0.32;
 
-const POP_DURATION_MS = 100;
 const POP_PEAK_SCALE = 1.55;
 
-// Droplets sell the "soap bubble pop" feel: when the orb snaps off,
-// a ring of small bright points scatters outward, sags slightly under
-// gravity, and fades. Count is fixed (not scaled with merge size) —
-// the orb's own radius already grows with cell count, so droplet
-// parity isn't perceivable, and a fixed budget keeps overdraw bounded.
-const DROPLET_COUNT_PER_GROUP = 10;
-const DROPLET_LIFETIME_MS = 250;
-// Travel distance is measured outward *from the orb's perimeter*, not
-// from its center — droplets fly off the membrane.
-const DROPLET_SCATTER_DISTANCE_MIN_CELLS = 0.7;
-const DROPLET_SCATTER_DISTANCE_MAX_CELLS = 1.2;
-// Smaller than bubbles (4–6 px) so they read as "tiny droplets",
-// not "more bubbles".
-const DROPLET_BASE_RADIUS_MIN_CELLS = 2.5 / REFERENCE_CELL_PX;
-const DROPLET_BASE_RADIUS_MAX_CELLS = 4.0 / REFERENCE_CELL_PX;
-// Downward sag at end of life, in cell units. Small — droplets are
+// Downward sag at end of life, in cell units. Small - droplets are
 // flying outward, not falling.
 const DROPLET_GRAVITY_CELLS = 0.18;
 const DROPLET_SHRINK_FACTOR = 0.35;
@@ -519,10 +526,7 @@ function drawCentralOrbAndPop(
     }
   }
   if (arrivedCount === 0) return;
-  let radius =
-    (CENTRAL_ORB_BASE_RADIUS_CELLS +
-      CENTRAL_ORB_GROWTH_CELLS * Math.sqrt(arrivedCount)) *
-    cellSize;
+  let radius = centralOrbBaseRadiusCells(arrivedCount) * cellSize;
   radius *= 1 + pulse;
   // Pop swell: orb keeps growing through POP_DURATION_MS, then snaps
   // off when popEndMs is reached (handled by the early return above).
@@ -594,8 +598,7 @@ function drawDroplets(
   // visible membrane the player just saw burst.
   const orbPopRadiusPx =
     POP_PEAK_SCALE *
-    (CENTRAL_ORB_BASE_RADIUS_CELLS +
-      CENTRAL_ORB_GROWTH_CELLS * Math.sqrt(state.bubbles.length)) *
+    centralOrbBaseRadiusCells(state.bubbles.length) *
     cellSize;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
@@ -2508,15 +2511,20 @@ function createGravityEffect(
   };
 }
 
-// Game-over unraveling renderer. The plan (per-cell timings, per-orb
-// trajectories) is built and cached in game-over-plan.ts; this just
-// reads the plan and draws each phase on top of the board.
+// Game-over: one giant merge that converges every occupied cell on
+// the board into a single orb at the lose cell. Same primitives as
+// createMergeEffect - shine halos, bubbles on Bezier arcs, central
+// orb growing in bumps as bubbles arrive - except the orb doesn't
+// pop. At the moment the last bubble arrives, a swarm of small light
+// bubbles spawns from the orb's position and drifts upward off the
+// playfield while the orb itself fades out behind them. The board is
+// left empty.
 // Spec: docs/05-animations.md ("Game over").
 
 function createGameOverEffect(snapshot: State, startNow: number): Effect {
-  const unravelCells = getUnravelPlan(snapshot).cells;
+  const plan = getGameOverPlan(snapshot);
   const skipCells = new Set<string>();
-  for (const cell of unravelCells) {
+  for (const cell of plan.cells) {
     skipCells.add(cellKey(cell.row, cell.column));
   }
   return {
@@ -2524,10 +2532,11 @@ function createGameOverEffect(snapshot: State, startNow: number): Effect {
     getSpriteItems(now, _prev, sprites) {
       const elapsedMs = now - startNow;
       const items: RenderItem[] = [];
-      // While the cell is still shining, render its sprite (the
-      // brightening halo is drawn additively on top in draw()).
-      // After burst, the sprite is gone and orbs carry the light.
-      for (const cell of unravelCells) {
+      // Until a cell's bubbles emit, render its element as it was on
+      // the board. Before its shine window opens it reads as a normal
+      // resting sprite; during shine the halo additively lights it up.
+      // After burst the bubbles carry the light and the cell is empty.
+      for (const cell of plan.cells) {
         if (elapsedMs >= cell.burstMs) continue;
         const boardCell = snapshot.board[cell.row]?.[cell.column];
         if (!boardCell || boardCell.kind === "empty") continue;
@@ -2541,88 +2550,177 @@ function createGameOverEffect(snapshot: State, startNow: number): Effect {
     },
     draw(ctx, now, _prev, _sprites, cellSize, canvasHeight) {
       const elapsedMs = now - startNow;
-      // Brightening halos on cells still in their shine phase.
-      // drawShineHalo internally switches to `lighter`, so the sprite
-      // beneath reads as lit up rather than occluded.
-      for (const cell of unravelCells) {
+      const landingCx = (plan.landing.column + 0.5) * cellSize;
+      const landingCy = canvasHeight - (plan.landing.row + 0.5) * cellSize;
+      // Shine halos behind cells in their shine window.
+      for (const cell of plan.cells) {
         if (elapsedMs < cell.shineStartMs) continue;
         if (elapsedMs >= cell.burstMs) continue;
         const t = clamp01(
-          (elapsedMs - cell.shineStartMs) / UNRAVEL_SHINE_MS,
+          (elapsedMs - cell.shineStartMs) / SHINE_DURATION_MS,
         );
         const intensity = t * t;
+        if (intensity <= 0) continue;
         const cx = (cell.column + 0.5) * cellSize;
         const cy = canvasHeight - (cell.row + 0.5) * cellSize;
         drawShineHalo(ctx, cx, cy, cellSize, intensity);
       }
-      // Orbs in flight.
+      // Bubbles in flight, converging on the landing cell.
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      for (const cell of unravelCells) {
-        if (elapsedMs < cell.burstMs) continue;
-        for (const orb of cell.orbs) {
-          drawUnravelOrb(ctx, orb, elapsedMs, cellSize, canvasHeight);
-        }
+      for (const bubble of plan.bubbles) {
+        if (elapsedMs < bubble.burstMs) continue;
+        if (elapsedMs >= bubble.arrivalMs) continue;
+        const travelT = (elapsedMs - bubble.burstMs) / bubble.travelMs;
+        const u = easeOutIn(travelT);
+        const cellCx = (bubble.originColumn + 0.5) * cellSize;
+        const cellCy = canvasHeight - (bubble.originRow + 0.5) * cellSize;
+        const ctrlX =
+          cellCx +
+          Math.cos(bubble.scatterAngleRad) *
+            bubble.scatterDistanceCells *
+            cellSize;
+        const ctrlY =
+          cellCy -
+          Math.sin(bubble.scatterAngleRad) *
+            bubble.scatterDistanceCells *
+            cellSize;
+        const oneMinus = 1 - u;
+        const x =
+          oneMinus * oneMinus * cellCx +
+          2 * oneMinus * u * ctrlX +
+          u * u * landingCx;
+        const y =
+          oneMinus * oneMinus * cellCy +
+          2 * oneMinus * u * ctrlY +
+          u * u * landingCy;
+        const radius =
+          bubble.baseRadiusCells *
+          cellSize *
+          (1 + BUBBLE_ARRIVAL_GROWTH * travelT);
+        drawBubble(ctx, x, y, radius, 1, bubble.hue);
       }
       ctx.restore();
+      // Central orb grows in bumps as bubbles arrive, then fades out
+      // over ORB_FADE_MS after the last arrival - dissolving into the
+      // drift bubbles that take over the visual below.
+      if (elapsedMs < plan.orbFadeEndMs) {
+        let arrivedCount = 0;
+        let pulse = 0;
+        for (const bubble of plan.bubbles) {
+          if (elapsedMs < bubble.arrivalMs) continue;
+          arrivedCount++;
+          const sinceArrival = elapsedMs - bubble.arrivalMs;
+          if (sinceArrival < CENTRAL_ORB_PULSE_DURATION_MS) {
+            const u = sinceArrival / CENTRAL_ORB_PULSE_DURATION_MS;
+            pulse += (1 - u) * (1 - u) * CENTRAL_ORB_PULSE_AMOUNT;
+          }
+        }
+        if (arrivedCount > 0) {
+          let radius = centralOrbBaseRadiusCells(arrivedCount) * cellSize;
+          radius *= 1 + pulse;
+          // Pulse from hundreds of converging bubbles would otherwise
+          // blow the orb well past the natural-growth cap; clamp here
+          // so the orb holds at the visual cap once enough bubbles
+          // have arrived.
+          radius = Math.min(radius, CENTRAL_ORB_PEAK_RADIUS_CELLS * cellSize);
+          let alpha = 1;
+          if (elapsedMs >= plan.lastArrivalMs) {
+            // Ease-in fade paired with a linear radius shrink. The
+            // shrink starts the moment dissolution begins and absorbs
+            // the lingering pulse decay into the same fluid motion -
+            // the orb visibly drains rather than holding size while
+            // just dimming.
+            const fadeT = clamp01(
+              (elapsedMs - plan.lastArrivalMs) / ORB_FADE_MS,
+            );
+            alpha = (1 - fadeT) * (1 - fadeT);
+            radius *= 1 - fadeT;
+          }
+          if (alpha > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = "lighter";
+            drawCentralOrb(ctx, landingCx, landingCy, radius, alpha);
+            ctx.restore();
+          }
+        }
+      }
+      // Dissolve bubbles: emitted from the orb's position the moment
+      // the last converging bubble arrives. Drift upward along Bezier
+      // arcs, then shrink and fade together at the end of their lives.
+      if (elapsedMs >= plan.lastArrivalMs && elapsedMs < plan.endMs) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (const bubble of plan.dissolveBubbles) {
+          drawDissolveBubble(
+            ctx,
+            bubble,
+            landingCx,
+            landingCy,
+            elapsedMs - plan.lastArrivalMs,
+            cellSize,
+          );
+        }
+        ctx.restore();
+      }
     },
   };
 }
 
-function drawUnravelOrb(
+function drawDissolveBubble(
   ctx: CanvasRenderingContext2D,
-  orb: UnravelOrb,
-  elapsedMs: number,
+  bubble: DissolveBubble,
+  originX: number,
+  originY: number,
+  sinceStart: number,
   cellSize: number,
-  canvasHeight: number,
 ): void {
-  const sinceStart = elapsedMs - orb.startMs;
-  const lifetime = orb.travelMs + UNRAVEL_TAIL_FADE_MS;
+  const lifetime = bubble.travelMs + DISSOLVE_TAIL_FADE_MS;
   if (sinceStart < 0 || sinceStart >= lifetime) return;
   // Stretch travel across the full lifetime (travel + tail fade) so
-  // the orb is still in motion at the moment it vanishes, rather than
-  // parking at the endpoint while the alpha fades.
+  // the bubble is still in motion at the moment it vanishes, rather
+  // than parking at the endpoint while the alpha fades.
   const travelT = clamp01(sinceStart / lifetime);
-  // Gentle ease-out: a 50/50 blend of linear and quadratic ease-out.
-  // Pure linear paired with the shrink reads as accelerating recession;
-  // a full ease-out reads as visibly settling at the endpoint. The blend
-  // gives a soft deceleration without either pitfall, and leaves ~1/3
-  // of peak velocity at u=1 so the orb still drifts as it disappears.
+  // Gentle ease-out: 50/50 blend of linear and quadratic ease-out.
+  // Leaves ~1/3 of peak velocity at u=1 so the bubble still drifts
+  // as it disappears rather than visibly settling at the endpoint.
   const u = 0.5 * travelT + 0.5 * (1 - (1 - travelT) * (1 - travelT));
-  const p0x = (orb.cellColumn + 0.5) * cellSize;
-  const p0y = canvasHeight - (orb.cellRow + 0.5) * cellSize;
   const p1x =
-    p0x + Math.cos(orb.controlAngleRad) * orb.controlDistanceCells * cellSize;
+    originX +
+    Math.cos(bubble.controlAngleRad) *
+      bubble.controlDistanceCells *
+      cellSize;
   const p1y =
-    p0y - Math.sin(orb.controlAngleRad) * orb.controlDistanceCells * cellSize;
+    originY -
+    Math.sin(bubble.controlAngleRad) *
+      bubble.controlDistanceCells *
+      cellSize;
   const p2x =
-    p0x + Math.cos(orb.endAngleRad) * orb.endDistanceCells * cellSize;
+    originX +
+    Math.cos(bubble.endAngleRad) * bubble.endDistanceCells * cellSize;
   const p2y =
-    p0y - Math.sin(orb.endAngleRad) * orb.endDistanceCells * cellSize;
+    originY -
+    Math.sin(bubble.endAngleRad) * bubble.endDistanceCells * cellSize;
   const oneMinus = 1 - u;
-  const x = oneMinus * oneMinus * p0x + 2 * oneMinus * u * p1x + u * u * p2x;
-  const y = oneMinus * oneMinus * p0y + 2 * oneMinus * u * p1y + u * u * p2y;
-  // The orb holds full size for most of the travel so the arc stays
-  // readable, then shrinks and fades together at the end. Radius
-  // hits zero on the same frame alpha does — the orb dies into
-  // nothing rather than blinking off at full size.
+  const x = oneMinus * oneMinus * originX + 2 * oneMinus * u * p1x + u * u * p2x;
+  const y = oneMinus * oneMinus * originY + 2 * oneMinus * u * p1y + u * u * p2y;
   let alpha = 1;
-  if (sinceStart > orb.travelMs) {
-    const tailT = (sinceStart - orb.travelMs) / UNRAVEL_TAIL_FADE_MS;
+  if (sinceStart > bubble.travelMs) {
+    const tailT = (sinceStart - bubble.travelMs) / DISSOLVE_TAIL_FADE_MS;
     alpha = (1 - tailT) * (1 - tailT);
   }
-  const shrinkStartMs = orb.travelMs + UNRAVEL_TAIL_FADE_MS - UNRAVEL_SHRINK_MS;
+  // Radius hits zero on the same frame alpha does - the bubble dies
+  // into nothing rather than blinking off at full size. Linear shrink
+  // distributes mass loss evenly across the shrink window.
+  const shrinkStartMs = bubble.travelMs + DISSOLVE_TAIL_FADE_MS - DISSOLVE_SHRINK_MS;
   let radiusScale = 1;
   if (sinceStart > shrinkStartMs) {
-    const shrinkT = clamp01((sinceStart - shrinkStartMs) / UNRAVEL_SHRINK_MS);
-    // Linear: radius loss is spread evenly across the shrink window
-    // so the dwindle reads from the start rather than clustering at
-    // the end. Reaches zero in lockstep with the alpha fade.
+    const shrinkT = clamp01((sinceStart - shrinkStartMs) / DISSOLVE_SHRINK_MS);
     radiusScale = 1 - shrinkT;
   }
-  const radiusPx = orb.baseRadiusCells * cellSize * radiusScale;
+  const radiusPx = bubble.baseRadiusCells * cellSize * radiusScale;
   if (radiusPx < 0.5) return;
-  drawBubble(ctx, x, y, radiusPx, alpha, orb.hue);
+  drawBubble(ctx, x, y, radiusPx, alpha, bubble.hue);
 }
 
 // Helpers --------------------------------------------------------
@@ -2631,6 +2729,16 @@ function clamp01(t: number): number {
   if (t < 0) return 0;
   if (t > 1) return 1;
   return t;
+}
+
+// Natural orb radius (in cell-units) for `bubbleCount` arrivals, clamped
+// to keep the post-pop-swell peak under ~1.8 cells across. The pulse and
+// pop-swell multipliers apply on top of the returned value.
+function centralOrbBaseRadiusCells(bubbleCount: number): number {
+  const grown =
+    CENTRAL_ORB_BASE_RADIUS_CELLS +
+    CENTRAL_ORB_GROWTH_CELLS * Math.sqrt(bubbleCount);
+  return Math.min(grown, CENTRAL_ORB_MAX_RADIUS_CELLS);
 }
 
 function lerp(a: number, b: number, t: number): number {

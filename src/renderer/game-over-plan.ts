@@ -1,89 +1,130 @@
-// Game-over unraveling: shared plan construction.
+// Game-over: one giant merge.
 //
-// Every occupied cell dissolves into a handful of light orbs that arc
-// outward and upward along a quadratic-Bezier path. Cells don't all
-// light up at once: the unraveling spreads from the overflow rows
-// (where the loss originated) outward through orthogonally-connected
-// occupied cells, then a final straggler sweep catches anything the
-// BFS couldn't reach.
+// Every occupied cell on the board takes part in a single reaction
+// that targets the center of the visible playfield. The shine, the
+// bubble flight, and the central orb are all the same primitives as
+// a normal merge - just oversized. Once every bubble has arrived
+// the orb doesn't pop: it degrades into a swarm of small light
+// bubbles that drift upward off the board and fade to nothing.
+//
+// The shine staggers row by row, from the overflow rows outward, so
+// the eye sees the elements that caused the loss start dissolving
+// first and the wave sweeps down the column.
 //
 // Per-cell timeline:
-//   cell.shineStartMs                — sprite begins brightening
-//   cell.burstMs (= start + SHINE)   — sprite vanishes, orbs burst
-//   orb.startMs + orb.travelMs       — orb has reached its endpoint
-//   ..+ UNRAVEL_TAIL_FADE_MS         — orb fully faded
+//   cell.shineStartMs                          - sprite begins brightening
+//   cell.burstMs (= start + SHINE)             - sprite vanishes, bubbles emit
+//   bubble.arrivalMs                           - bubble absorbed into central orb
+//   plan.lastArrivalMs                         - last bubble arrives, orb peaks,
+//                                                dissolve begins (drift bubbles
+//                                                emit, orb fades and shrinks)
+//   plan.orbFadeEndMs (= last + ORB_FADE)      - central orb fully faded
+//   plan.endMs                                 - last dissolve bubble has faded
 //
-// This module is consumed by two callers: the renderer (to draw the
-// shine halos and orbs) and the animation driver (to know when the
-// step should commit so the reveal fires the moment the last orb
-// finishes fading). Both must see the same sampled jitter, so the
-// plan is built once per snapshot and cached. Lives in its own
-// module to avoid a circular import between effects.ts and
+// Consumed by the renderer (to draw shine, converging bubbles, orb,
+// dissolve bubbles) and the animation driver (to know when the step
+// should commit so the modal reveal lands the moment the last
+// dissolve bubble finishes). Both must see the same sampled jitter,
+// so the plan is built once per snapshot and cached. Lives in its
+// own module to avoid a circular import between effects.ts and
 // driver.ts.
 //
 // Spec: docs/05-animations.md ("Game over").
 
 import type { State } from "../core/state";
+import {
+  BUBBLES_PER_CELL,
+  BUBBLE_BASE_RADIUS_MAX_CELLS,
+  BUBBLE_BASE_RADIUS_MIN_CELLS,
+  BUBBLE_SCATTER_DISTANCE_MAX_CELLS,
+  BUBBLE_SCATTER_DISTANCE_MIN_CELLS,
+  SHINE_DURATION_MS,
+} from "./merge-constants";
 
-// Reference cell size the original pixel-tuned values were authored
-// against. Constants below were divided by this once so they read as
-// cell-units; the renderer multiplies by the live cellSize.
+// Center of the visible playfield (rows 0-6, columns 0-6). All cells
+// on the board converge here regardless of where the loss happened.
+const LANDING_ROW = 3;
+const LANDING_COLUMN = 3;
+
+// Rows 7 and 8 are the overflow zone (see core/state.ts). Cells at
+// or above this row are the elements that caused the loss; they
+// start shining at t=0 and the wave staggers downward from there.
+const OVERFLOW_ROW_MIN = 7;
+// Stagger from overflow rows outward: a far-from-overflow row starts
+// over a second after the overflow. Slow enough to read as a
+// propagation sweep down the board, but the wave never reverses or
+// branches - it's one big merge being kicked off row by row.
+const STAGGER_STEP_MS = 180;
+const STAGGER_JITTER_MS = 75;
+
+// Converging bubbles travel longer than in a normal merge because
+// they cover much larger distances - up to 6+ cells from a corner
+// to the center. Reusing the merge's 280-480 ms range made the
+// fastest bubbles read as visually brutal across that span; this
+// roughly doubles travel time so even corner bubbles feel like they
+// drift rather than rush.
+const CONVERGE_TRAVEL_MIN_MS = 550;
+const CONVERGE_TRAVEL_MAX_MS = 900;
+
+// After the last bubble arrives, the central orb starts fading and
+// shrinking. Its alpha fades to zero over ORB_FADE_MS while its
+// radius shrinks linearly to zero over the same window. Ease-in
+// fade: the orb stays bright at first so the moment of dissolution
+// is legible, then drops away as the drift bubbles take over.
+export const ORB_FADE_MS = 350;
+
+// Dissolve bubbles released from the central orb at lastArrivalMs.
+// Counts, sizes, and trajectories match the orbs from the previous
+// game-over animation: a generous handful arc upward, drift outward,
+// then shrink and fade together at the end of their lives.
+const DISSOLVE_BUBBLE_COUNT = 36;
+const DISSOLVE_TRAVEL_MIN_MS = 1900;
+const DISSOLVE_TRAVEL_MAX_MS = 2500;
+export const DISSOLVE_TAIL_FADE_MS = 280;
+// Radius shrinks over the last stretch of a bubble's life, reaching
+// zero exactly when the alpha fade does. Spread over a long window so
+// the dissipation reads as energy slowly running out rather than
+// bubbles blinking off in place.
+export const DISSOLVE_SHRINK_MS = 900;
+
 const REFERENCE_CELL_PX = 48;
+// Bubbles a touch larger than merge bubbles. The trajectory is the
+// focal point, not a quick flicker - bubbles need readable mass the
+// whole way along.
+const DISSOLVE_RADIUS_MIN_CELLS = 5.0 / REFERENCE_CELL_PX;
+const DISSOLVE_RADIUS_MAX_CELLS = 7.5 / REFERENCE_CELL_PX;
+// Bezier control point: pushed out from the origin in any direction
+// (full 360 deg), creating the lateral bulge of the arc.
+const DISSOLVE_CONTROL_DIST_MIN_CELLS = 1.4;
+const DISSOLVE_CONTROL_DIST_MAX_CELLS = 2.8;
+// Endpoint angle, measured counter-clockwise from +x. pi/2 is
+// straight up; the range below is a wide upper fan (~14..166 deg),
+// so every bubble drifts upward with horizontal spread.
+const DISSOLVE_END_ANGLE_MIN_RAD = Math.PI / 2 - Math.PI / 2.3;
+const DISSOLVE_END_ANGLE_MAX_RAD = Math.PI / 2 + Math.PI / 2.3;
+const DISSOLVE_END_DIST_MIN_CELLS = 4.5;
+const DISSOLVE_END_DIST_MAX_CELLS = 7.0;
 
-// Overflow rows (0-indexed) — these are the cells whose presence on
-// a stable board triggers the loss; BFS phase A starts from every
-// occupied cell here. Mirrors apply.ts's OVERFLOW_ROW_MIN.
-const UNRAVEL_OVERFLOW_ROW_MIN = 7;
-// Delay before a cell triggers each of its occupied neighbors,
-// sampled uniformly in [STEP - JITTER, STEP + JITTER] independently
-// per propagation edge so the wave doesn't advance in lockstep. The
-// spec's starting value was 80 ms per step with ±25 ms jitter;
-// tuned slower and much wider so a fast far-away path can outrun a
-// slow near path — the front dissolves into a scatter rather than
-// reading as a rank-by-rank advance. The 5:1 max/min ratio is what
-// makes the wave look genuinely organic.
-const UNRAVEL_BFS_STEP_MS = 750;
-const UNRAVEL_BFS_STEP_JITTER_MS = 500;
-// Phase B (straggler sweep): how long after the last phase-A cell
-// started, and the per-cell jitter applied to that base time. Rare
-// in practice — dense boards usually leave every occupied cell
-// reachable from the overflow.
-const UNRAVEL_PHASE_B_GAP_MS = 250;
-const UNRAVEL_PHASE_B_JITTER_MS = 120;
-export const UNRAVEL_SHINE_MS = 220;
-const UNRAVEL_TRAVEL_MIN_MS = 1900;
-const UNRAVEL_TRAVEL_MAX_MS = 2500;
-export const UNRAVEL_TAIL_FADE_MS = 280;
-// Radius shrinks over the last stretch of an orb's life, reaching
-// zero exactly when the alpha fade does. Spread over a long window
-// so the dissipation reads as energy slowly running out rather than
-// orbs blinking off in place. Linear ramp: the loss is distributed
-// evenly across the window so the orb visibly thins from the start
-// of the shrink rather than clinging to full mass until the very end.
-export const UNRAVEL_SHRINK_MS = 900;
+export type ConvergeBubble = {
+  readonly originRow: number;
+  readonly originColumn: number;
+  readonly burstMs: number;
+  readonly arrivalMs: number;
+  readonly travelMs: number;
+  readonly scatterAngleRad: number;
+  readonly scatterDistanceCells: number;
+  readonly baseRadiusCells: number;
+  readonly hue: "white" | "pale-yellow";
+};
 
-const UNRAVEL_ORBS_PER_CELL = 8;
-// Larger than merge bubbles. The trajectory is the focal point, not
-// a quick flicker — orbs need readable mass the whole way along.
-const UNRAVEL_ORB_RADIUS_MIN_CELLS = 5.0 / REFERENCE_CELL_PX;
-const UNRAVEL_ORB_RADIUS_MAX_CELLS = 7.5 / REFERENCE_CELL_PX;
+export type ConvergeCell = {
+  readonly row: number;
+  readonly column: number;
+  readonly shineStartMs: number;
+  readonly burstMs: number;
+};
 
-// Bezier control point: pushed out from the cell in any direction
-// (full 360°), creating the lateral bulge of the arc.
-const UNRAVEL_CONTROL_DIST_MIN_CELLS = 1.4;
-const UNRAVEL_CONTROL_DIST_MAX_CELLS = 2.8;
-// Endpoint angle, measured counter-clockwise from +x. π/2 is
-// straight up; the range below is a wide upper fan (~14°..166°),
-// so every orb drifts upward with horizontal spread.
-const UNRAVEL_END_ANGLE_MIN_RAD = Math.PI / 2 - Math.PI / 2.3;
-const UNRAVEL_END_ANGLE_MAX_RAD = Math.PI / 2 + Math.PI / 2.3;
-const UNRAVEL_END_DIST_MIN_CELLS = 4.5;
-const UNRAVEL_END_DIST_MAX_CELLS = 7.0;
-
-export type UnravelOrb = {
-  readonly cellRow: number;
-  readonly cellColumn: number;
-  readonly startMs: number;
+export type DissolveBubble = {
   readonly travelMs: number;
   readonly controlAngleRad: number;
   readonly controlDistanceCells: number;
@@ -93,177 +134,139 @@ export type UnravelOrb = {
   readonly hue: "white" | "pale-yellow";
 };
 
-export type UnravelCell = {
-  readonly row: number;
-  readonly column: number;
-  readonly shineStartMs: number;
-  readonly burstMs: number;
-  readonly orbs: readonly UnravelOrb[];
-};
-
-export type UnravelPlan = {
-  readonly cells: readonly UnravelCell[];
-  // Wall-clock offset (from step start) at which the last orb has
-  // fully faded — i.e., the earliest moment the reveal can take
-  // over without cutting off a still-visible orb.
+export type GameOverPlan = {
+  readonly landing: { readonly row: number; readonly column: number };
+  readonly cells: readonly ConvergeCell[];
+  readonly bubbles: readonly ConvergeBubble[];
+  readonly dissolveBubbles: readonly DissolveBubble[];
+  readonly lastArrivalMs: number;
+  readonly orbFadeEndMs: number;
   readonly endMs: number;
 };
 
-const unravelPlanCache = new WeakMap<State, UnravelPlan>();
+const planCache = new WeakMap<State, GameOverPlan>();
 
-export function getUnravelPlan(snapshot: State): UnravelPlan {
-  let plan = unravelPlanCache.get(snapshot);
+export function getGameOverPlan(snapshot: State): GameOverPlan {
+  let plan = planCache.get(snapshot);
   if (plan === undefined) {
-    plan = buildUnravelPlan(snapshot);
-    unravelPlanCache.set(snapshot, plan);
+    plan = buildPlan(snapshot);
+    planCache.set(snapshot, plan);
   }
   return plan;
 }
 
-// Duration of the game-over unravel for `snapshot`, in ms. Driven
+// Duration of the game-over animation for `snapshot`, in ms. Driven
 // by the cached plan so the moment the step commits matches the
-// moment the last orb has visibly faded.
+// moment the last dissolve bubble has visibly faded.
 export function gameOverEffectDurationMs(snapshot: State): number {
-  return getUnravelPlan(snapshot).endMs;
+  return getGameOverPlan(snapshot).endMs;
 }
 
-function buildUnravelPlan(snapshot: State): UnravelPlan {
-  const shineStartByKey = computeUnravelShineStarts(snapshot);
-  const cells: UnravelCell[] = [];
-  let endMs = 0;
+function buildPlan(snapshot: State): GameOverPlan {
+  const landing = { row: LANDING_ROW, column: LANDING_COLUMN };
+  const cells: ConvergeCell[] = [];
+  const bubbles: ConvergeBubble[] = [];
+  let lastArrivalMs = 0;
   for (let r = 0; r < snapshot.board.length; r++) {
     const row = snapshot.board[r];
     for (let c = 0; c < row.length; c++) {
-      const cell = row[c];
-      if (cell.kind === "empty") continue;
-      const shineStartMs = shineStartByKey.get(cellKey(r, c)) ?? 0;
-      const burstMs = shineStartMs + UNRAVEL_SHINE_MS;
-      // Distribute control angles around the circle so orbs fan out
-      // rather than clustering. Per-orb jitter keeps them un-gridded.
-      const baseControlAngle = Math.random() * Math.PI * 2;
-      const orbs: UnravelOrb[] = [];
-      for (let i = 0; i < UNRAVEL_ORBS_PER_CELL; i++) {
-        const controlAngle =
-          baseControlAngle +
-          (i * (Math.PI * 2)) / UNRAVEL_ORBS_PER_CELL +
+      if (row[c].kind === "empty") continue;
+      const stagger =
+        r >= OVERFLOW_ROW_MIN ? 0 : (OVERFLOW_ROW_MIN - r) * STAGGER_STEP_MS;
+      const jitter = (Math.random() * 2 - 1) * STAGGER_JITTER_MS;
+      const shineStartMs = Math.max(0, stagger + jitter);
+      const burstMs = shineStartMs + SHINE_DURATION_MS;
+      cells.push({ row: r, column: c, shineStartMs, burstMs });
+      // Distribute bubble angles around the circle so they fan out
+      // of the cell instead of clumping. Per-bubble jitter keeps the
+      // swarm from looking gridded.
+      const baseAngle = Math.random() * Math.PI * 2;
+      for (let i = 0; i < BUBBLES_PER_CELL; i++) {
+        const angle =
+          baseAngle +
+          (i * (Math.PI * 2)) / BUBBLES_PER_CELL +
           (Math.random() - 0.5) * 0.4;
         const travelMs = lerp(
-          UNRAVEL_TRAVEL_MIN_MS,
-          UNRAVEL_TRAVEL_MAX_MS,
+          CONVERGE_TRAVEL_MIN_MS,
+          CONVERGE_TRAVEL_MAX_MS,
           Math.random(),
         );
-        orbs.push({
-          cellRow: r,
-          cellColumn: c,
-          startMs: burstMs,
+        const arrivalMs = burstMs + travelMs;
+        if (arrivalMs > lastArrivalMs) lastArrivalMs = arrivalMs;
+        bubbles.push({
+          originRow: r,
+          originColumn: c,
+          burstMs,
+          arrivalMs,
           travelMs,
-          controlAngleRad: controlAngle,
-          controlDistanceCells: lerp(
-            UNRAVEL_CONTROL_DIST_MIN_CELLS,
-            UNRAVEL_CONTROL_DIST_MAX_CELLS,
-            Math.random(),
-          ),
-          endAngleRad: lerp(
-            UNRAVEL_END_ANGLE_MIN_RAD,
-            UNRAVEL_END_ANGLE_MAX_RAD,
-            Math.random(),
-          ),
-          endDistanceCells: lerp(
-            UNRAVEL_END_DIST_MIN_CELLS,
-            UNRAVEL_END_DIST_MAX_CELLS,
+          scatterAngleRad: angle,
+          scatterDistanceCells: lerp(
+            BUBBLE_SCATTER_DISTANCE_MIN_CELLS,
+            BUBBLE_SCATTER_DISTANCE_MAX_CELLS,
             Math.random(),
           ),
           baseRadiusCells: lerp(
-            UNRAVEL_ORB_RADIUS_MIN_CELLS,
-            UNRAVEL_ORB_RADIUS_MAX_CELLS,
+            BUBBLE_BASE_RADIUS_MIN_CELLS,
+            BUBBLE_BASE_RADIUS_MAX_CELLS,
             Math.random(),
           ),
           hue: Math.random() < 0.55 ? "white" : "pale-yellow",
         });
-        const orbEndMs = burstMs + travelMs + UNRAVEL_TAIL_FADE_MS;
-        if (orbEndMs > endMs) endMs = orbEndMs;
-      }
-      cells.push({ row: r, column: c, shineStartMs, burstMs, orbs });
-    }
-  }
-  return { cells, endMs };
-}
-
-// Propagates the unraveling outward from the overflow rows. Phase A
-// is a Dijkstra-style BFS where each edge takes
-// UNRAVEL_BFS_STEP_MS ± UNRAVEL_BFS_STEP_JITTER_MS, sampled
-// independently per propagation. A cell's start time is the earliest
-// arrival from any source. Phase B sweeps up cells the BFS couldn't
-// reach (occupied cells with no orthogonal path back to an overflow
-// cell) — rare on real lose-state boards, but the spec defines it
-// for completeness.
-function computeUnravelShineStarts(snapshot: State): Map<string, number> {
-  const startTimes = new Map<string, number>();
-  type Entry = { row: number; column: number; time: number };
-  const pending: Entry[] = [];
-  const rows = snapshot.board.length;
-  for (let r = UNRAVEL_OVERFLOW_ROW_MIN; r < rows; r++) {
-    const row = snapshot.board[r];
-    if (!row) continue;
-    for (let c = 0; c < row.length; c++) {
-      if (row[c].kind === "empty") continue;
-      const key = cellKey(r, c);
-      startTimes.set(key, 0);
-      pending.push({ row: r, column: c, time: 0 });
-    }
-  }
-  let phaseAMaxStart = 0;
-  while (pending.length > 0) {
-    let minIdx = 0;
-    for (let i = 1; i < pending.length; i++) {
-      if (pending[i].time < pending[minIdx].time) minIdx = i;
-    }
-    const current = pending.splice(minIdx, 1)[0];
-    const currentKey = cellKey(current.row, current.column);
-    // Skip stale entries: a later push may have lowered this cell's
-    // best-known time, in which case we've already propagated from
-    // the better value.
-    if (startTimes.get(currentKey) !== current.time) continue;
-    if (current.time > phaseAMaxStart) phaseAMaxStart = current.time;
-    const neighbors: ReadonlyArray<readonly [number, number]> = [
-      [current.row - 1, current.column],
-      [current.row + 1, current.column],
-      [current.row, current.column - 1],
-      [current.row, current.column + 1],
-    ];
-    for (const [nr, nc] of neighbors) {
-      const nRow = snapshot.board[nr];
-      if (!nRow) continue;
-      const nCell = nRow[nc];
-      if (!nCell || nCell.kind === "empty") continue;
-      const nKey = cellKey(nr, nc);
-      const delay =
-        UNRAVEL_BFS_STEP_MS +
-        (Math.random() * 2 - 1) * UNRAVEL_BFS_STEP_JITTER_MS;
-      const arrival = current.time + delay;
-      const existing = startTimes.get(nKey);
-      if (existing === undefined || arrival < existing) {
-        startTimes.set(nKey, arrival);
-        pending.push({ row: nr, column: nc, time: arrival });
       }
     }
   }
-  const phaseBBase = phaseAMaxStart + UNRAVEL_PHASE_B_GAP_MS;
-  for (let r = 0; r < rows; r++) {
-    const row = snapshot.board[r];
-    for (let c = 0; c < row.length; c++) {
-      if (row[c].kind === "empty") continue;
-      const key = cellKey(r, c);
-      if (startTimes.has(key)) continue;
-      const jitter = (Math.random() * 2 - 1) * UNRAVEL_PHASE_B_JITTER_MS;
-      startTimes.set(key, phaseBBase + jitter);
-    }
+  const dissolveBubbles: DissolveBubble[] = [];
+  const dissolveBaseAngle = Math.random() * Math.PI * 2;
+  let dissolveMaxLifetimeMs = 0;
+  for (let i = 0; i < DISSOLVE_BUBBLE_COUNT; i++) {
+    const controlAngle =
+      dissolveBaseAngle +
+      (i * (Math.PI * 2)) / DISSOLVE_BUBBLE_COUNT +
+      (Math.random() - 0.5) * 0.4;
+    const travelMs = lerp(
+      DISSOLVE_TRAVEL_MIN_MS,
+      DISSOLVE_TRAVEL_MAX_MS,
+      Math.random(),
+    );
+    const lifetimeMs = travelMs + DISSOLVE_TAIL_FADE_MS;
+    if (lifetimeMs > dissolveMaxLifetimeMs) dissolveMaxLifetimeMs = lifetimeMs;
+    dissolveBubbles.push({
+      travelMs,
+      controlAngleRad: controlAngle,
+      controlDistanceCells: lerp(
+        DISSOLVE_CONTROL_DIST_MIN_CELLS,
+        DISSOLVE_CONTROL_DIST_MAX_CELLS,
+        Math.random(),
+      ),
+      endAngleRad: lerp(
+        DISSOLVE_END_ANGLE_MIN_RAD,
+        DISSOLVE_END_ANGLE_MAX_RAD,
+        Math.random(),
+      ),
+      endDistanceCells: lerp(
+        DISSOLVE_END_DIST_MIN_CELLS,
+        DISSOLVE_END_DIST_MAX_CELLS,
+        Math.random(),
+      ),
+      baseRadiusCells: lerp(
+        DISSOLVE_RADIUS_MIN_CELLS,
+        DISSOLVE_RADIUS_MAX_CELLS,
+        Math.random(),
+      ),
+      hue: Math.random() < 0.55 ? "white" : "pale-yellow",
+    });
   }
-  return startTimes;
-}
-
-function cellKey(row: number, column: number): string {
-  return `${row},${column}`;
+  const orbFadeEndMs = lastArrivalMs + ORB_FADE_MS;
+  const endMs = lastArrivalMs + dissolveMaxLifetimeMs;
+  return {
+    landing,
+    cells,
+    bubbles,
+    dissolveBubbles,
+    lastArrivalMs,
+    orbFadeEndMs,
+    endMs,
+  };
 }
 
 function lerp(a: number, b: number, t: number): number {
