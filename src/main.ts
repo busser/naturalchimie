@@ -4,6 +4,7 @@ import { loadSprites, type SpriteAtlas } from './assets/sprite-loader';
 import { drawSpriteAtCell } from './assets/sprite-renderer';
 import type { Tier } from './core/state';
 import { createFavicon } from './favicon';
+import { formatScore } from './format-score';
 import { attachKeyboard } from './input/keyboard';
 import { attachTouch } from './input/touch';
 import { createLayout } from './layout';
@@ -120,7 +121,7 @@ async function main(): Promise<void> {
   function showGameOver(score: number): void {
     if (gameOverShown) return;
     gameOverShown = true;
-    gameOverScoreEl.textContent = String(score);
+    gameOverScoreEl.textContent = formatScore(score);
     gameOverEl.setAttribute('aria-hidden', 'false');
     // Reveal the element first so the browser paints it at
     // opacity: 0; the next frame triggers the CSS transition.
@@ -447,7 +448,7 @@ async function main(): Promise<void> {
     const inFlight = driver.getInFlight(eff);
     const settling = inFlight !== null && inFlight.step.event.kind === 'spawn';
     if (snapshot.score !== lastScore && (settling || snapshot.active !== null)) {
-      scoreEl.textContent = String(snapshot.score);
+      scoreEl.textContent = formatScore(snapshot.score);
       lastScore = snapshot.score;
     }
     favicon.update(snapshot);
@@ -499,11 +500,8 @@ function populateLeaderboard(
   }
   emptyEl.hidden = true;
   const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'short' });
-  const numFmt = new Intl.NumberFormat();
   for (const entry of entries) {
-    listEl.appendChild(
-      buildLeaderboardRow(entry, sprites, cellSize, dateFmt, numFmt),
-    );
+    listEl.appendChild(buildLeaderboardRow(entry, sprites, cellSize, dateFmt));
   }
 }
 
@@ -512,7 +510,6 @@ function buildLeaderboardRow(
   sprites: SpriteAtlas,
   cellSize: number,
   dateFmt: Intl.DateTimeFormat,
-  numFmt: Intl.NumberFormat,
 ): HTMLLIElement {
   const row = document.createElement('li');
   row.className = 'leaderboard__row';
@@ -530,7 +527,7 @@ function buildLeaderboardRow(
 
   const scoreEl = document.createElement('span');
   scoreEl.className = 'leaderboard__score';
-  scoreEl.textContent = numFmt.format(entry.score);
+  scoreEl.textContent = formatScore(entry.score);
   row.appendChild(scoreEl);
 
   const dateEl = document.createElement('span');

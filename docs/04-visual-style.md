@@ -99,10 +99,27 @@ The sidebar contains, from top to bottom:
 1. **Score** — the current score, rendered in a large hand-drawn
    serif numeral typeface. Color is a deep warm brown
    (`#5a3820` or similar). The number is displayed without
-   thousands separators and without leading zeros: `0`, `27`,
-   `19683`, `62976`. The score sits roughly 10% of the window
-   height down from the top of the sidebar, horizontally centered
-   within the sidebar.
+   thousands separators and without leading zeros, and is capped
+   at five characters by collapsing into three-significant-figure
+   notation once it would otherwise grow wider:
+
+   | Range | Display | Examples |
+   |---|---|---|
+   | `0`-`999` | the raw integer | `0`, `27`, `999` |
+   | `1000`-`9999` | `<n.nn>k` | `1.00k`, `4.04k`, `9.99k` |
+   | `10000`-`99999` | `<nn.n>k` | `10.0k`, `12.3k`, `99.9k` |
+   | `100000`-`999999` | `<nnn>k` | `123k`, `481k`, `999k` |
+   | `1000000`-`9999999` | `<n.nn>M` | `1.00M`, `9.99M` |
+   | `10000000`-`99999999` | `<nn.n>M` | `12.3M`, `99.9M` |
+   | `>=100000000` | `<nnn>M` | `123M`, `821M` |
+
+   Conversions truncate toward zero, never round up, so `1099`
+   reads `1.09k` and `1399999` reads `1.39M`. The five-character
+   cap exists so the portrait bottom strip's score-preview-icons
+   row keeps its proportions even at high scores (see
+   `09-responsive-layout.md` "Bottom strip contents"). The score
+   sits roughly 10% of the window height down from the top of the
+   sidebar, horizontally centered within the sidebar.
 
 2. **Preview window** — a rectangular recessed area showing the
    next piece. The recess is rendered as a darker brown rectangle

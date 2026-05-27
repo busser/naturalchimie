@@ -159,7 +159,9 @@ described in `10-persistence.md` "Sort order". Each row shows:
 - The sprite of the run's highest tier, rendered at
   preview-cell scale.
 - The count of that tier, prefixed `x` (e.g., `x3`).
-- The final score, right-aligned for column alignment.
+- The final score, right-aligned for column alignment, using
+  the same compact format as the in-play score (see
+  `04-visual-style.md` "Score").
 - The date of the run, in the player's locale's short format.
 
 If fewer than ten entries exist, only the populated rows are
