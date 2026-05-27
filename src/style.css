@@ -89,13 +89,14 @@ body {
      used elsewhere in the portrait layout. layout.ts's HEIGHT_DIVISOR
      accounts for this thicker strip. */
   height: calc(var(--cell) * 2.4);
-  /* Horizontal padding equals the row gap so the score (centered in
-     its flex:1 region on the left) and the action stack (centered in
-     its flex:1 region on the right) end up equidistant from both
-     the preview recess and the panel edge. Vertical padding stays at
-     0.2 cells per the strip-height math above. */
-  padding: calc(var(--cell) * 0.2) calc(var(--cell) * 0.4);
-  gap: calc(var(--cell) * 0.4);
+  /* No horizontal padding or gap so the full 7-cell strip width is
+     available to the flex children. The score, preview, and action
+     stack use flex weights 2.5 / 3 / 1.5 to partition that space
+     exactly. Vertical padding stays at 0.2 cells per the
+     strip-height math above. The explicit `gap: 0` overrides the
+     base `.info` rule's 0.5-cell gap (used in landscape). */
+  padding: calc(var(--cell) * 0.2) 0;
+  gap: 0;
   align-items: center;
 }
 
@@ -108,9 +109,18 @@ body {
 }
 
 :root[data-layout='portrait'] .score {
-  /* Take the room left of the preview so the numeral centers in its
-     half of the strip rather than hugging the parchment edge. */
-  flex: 1;
+  /* Score / preview / actions share the 7-cell strip width via flex
+     weights 2.5 / 3 / 1.5; the score column resolves to 2.5 cells. A
+     worst-case five-character score string in a bold serif (e.g.
+     "99.9M") is roughly 2.6 times the font size, so the font is
+     sized to keep it inside the column with margin to spare.
+     `min-width: 0` overrides the default `min-width: auto` on flex
+     items so a glyph that runs wider than estimated would visually
+     overflow rather than pushing the preview and icon column
+     off-center. */
+  flex: 2.5;
+  min-width: 0;
+  font-size: calc(var(--cell) * 0.6);
 }
 
 .preview {
@@ -124,10 +134,10 @@ body {
 }
 
 :root[data-layout='portrait'] .preview {
-  /* Match the preview canvas's intrinsic 3-cell width so the recess
-     hugs the canvas with no flanking parchment showing through. */
-  width: calc(var(--cell) * 3);
-  flex: none;
+  /* flex:3 of the 2.5/3/1.5 split resolves to 3 cells, matching the
+     preview canvas's intrinsic 3-cell width so the recess hugs the
+     canvas with no flanking parchment showing through. */
+  flex: 3;
 }
 
 .preview canvas {
@@ -152,21 +162,26 @@ body {
   flex-direction: column;
   margin-top: 0;
   gap: calc(var(--cell) * 0.2);
-  /* Mirror the score's flex:1 so the action stack occupies a column
-     of identical width on the right; align-items:center keeps the
+  /* flex:1.5 of the 2.5/3/1.5 split resolves to 1.5 cells, enough to
+     comfortably hold the 0.5-cell icons stacked vertically with
+     parchment showing around them. `align-items: center` keeps the
      buttons their natural size (default `stretch` would widen them). */
-  flex: 1;
+  flex: 1.5;
   align-items: center;
 }
 
 .actions__button {
   /* Button reset. The parchment shows through; only the SVG ink and
-     the hover/active feedback are visible. */
+     the hover/active feedback are visible. No padding around the SVG
+     so each button is exactly its icon's width: in portrait the
+     0.5-cell SVG fits inside the 0.6-cell actions column produced by
+     the flex:3-vs-flex:1 split with .score. The hover glow and
+     pressed-state inversion below paint directly behind the icon. */
   appearance: none;
   background: transparent;
   border: none;
   border-radius: 4px;
-  padding: calc(var(--cell) * 0.1);
+  padding: 0;
   margin: 0;
   color: var(--score-ink);
   cursor: pointer;
