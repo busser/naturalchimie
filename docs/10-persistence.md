@@ -13,7 +13,7 @@ discarded without affecting the other:
 | Key | Holds | Lifecycle |
 |---|---|---|
 | `naturalchimie:run` | Snapshot of the current in-progress round. | Written on every stable board. Removed on game over. |
-| `naturalchimie:scores` | Top-10 leaderboard of finished runs. | Updated on game over. Otherwise untouched. |
+| `naturalchimie:scores` | Leaderboard of every finished run. | Updated on game over. Otherwise untouched. |
 
 Each value is a JSON-encoded object with a top-level integer
 `version` field. The version bumps when the payload's shape
@@ -128,7 +128,12 @@ game uses.
 
 ## Leaderboard
 
-The leaderboard holds at most ten entries. Each entry records
+The leaderboard records every finished run. There is no cap:
+each entry is ~110 bytes JSON-encoded, so even thousands of runs
+stay well under the typical 5 MB `localStorage` budget. The hall
+of fame view shows only the top of the list; the rest is kept so
+the view can display the total number of games played. Each
+entry records
 four fields:
 
 | Field | Meaning |
@@ -188,17 +193,11 @@ the moment of loss does.
 ### When to write
 
 On game over, after the lose condition has fired and the run
-key has been cleared, the game builds the new entry and
-inserts it into the sorted list. If the list now has more than
-ten entries, the trailing entry is dropped. The list is then
-written back to `naturalchimie:scores`.
-
-A run that does not displace any of the existing top ten is
-still appended if there is room (fewer than ten entries
-stored); otherwise it is silently dropped from the
-leaderboard. The game does not surface a "you didn't make the
-top ten" message: the leaderboard is private to the player and
-expresses only what they have done well.
+key has been cleared, the game builds the new entry, inserts it
+into the sorted list, and writes the list back to
+`naturalchimie:scores`. No entry is ever dropped: every finished
+run is recorded so the hall of fame can show an accurate
+"games played" total.
 
 ## Failure handling
 

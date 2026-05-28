@@ -213,9 +213,9 @@ describe('persistence / leaderboard', () => {
     ]);
   });
 
-  it('truncates to the top ten', () => {
+  it('keeps every inserted entry, sorted', () => {
     let entries: LeaderboardEntry[] = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 1005; i++) {
       entries = insertLeaderboardEntry(entries, {
         highestTier: 5,
         highestTierCount: 1,
@@ -223,10 +223,9 @@ describe('persistence / leaderboard', () => {
         timestamp: '2026-01-01T00:00:00+00:00',
       });
     }
-    expect(entries).toHaveLength(10);
-    // Top entry should be the highest score (14), bottom should be 5.
-    expect(entries[0].score).toBe(14);
-    expect(entries[9].score).toBe(5);
+    expect(entries).toHaveLength(1005);
+    expect(entries[0].score).toBe(1004);
+    expect(entries[1004].score).toBe(0);
   });
 
   it('round-trips through encode/decode', () => {

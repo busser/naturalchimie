@@ -460,6 +460,18 @@ body {
   display: none;
 }
 
+.leaderboard__games-played {
+  text-align: center;
+  font-size: calc(var(--cell) * 0.28);
+  padding-top: calc(var(--cell) * 0.35);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard__games-played[hidden] {
+  display: none;
+}
+
 /* Solid frame-brown overlay that paints before any JS runs, hiding
    the bare landscape layout that would otherwise flash on portrait
    viewports while sprites load. main.ts adds .is-loaded after the

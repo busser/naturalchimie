@@ -1,6 +1,6 @@
 // localStorage persistence per docs/10-persistence.md. Two
 // independent keys: a single in-progress run snapshot, and a
-// top-10 leaderboard of finished runs. Encoded payloads carry a
+// leaderboard of finished runs. Encoded payloads carry a
 // `version` integer; on a mismatch the entry is silently
 // discarded (there is no migration code).
 //
@@ -30,7 +30,6 @@ const SCORES_VERSION = 1;
 const PLAYFIELD_HEIGHT = 7;
 const BOARD_HEIGHT = 9;
 const BOARD_WIDTH = 7;
-const LEADERBOARD_SIZE = 10;
 const MIN_TIER = 1;
 const MAX_TIER = 12;
 
@@ -162,7 +161,7 @@ export function insertLeaderboardEntry(
   entries: readonly LeaderboardEntry[],
   entry: LeaderboardEntry,
 ): LeaderboardEntry[] {
-  return [...entries, entry].sort(compareEntries).slice(0, LEADERBOARD_SIZE);
+  return [...entries, entry].sort(compareEntries);
 }
 
 // Local-timezone ISO 8601, matching the example in the spec. The

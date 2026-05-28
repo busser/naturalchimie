@@ -152,20 +152,28 @@ The top bears a hand-drawn serif title (e.g., "Hall of Fame" or
 "Top Alchemists"; the exact wording is for the implementer to
 pick).
 
-Below the title is a list of up to ten entries, sorted as
-described in `10-persistence.md` "Sort order". Each row shows:
+Below the title is a list of the top five entries from the
+stored leaderboard (`10-persistence.md` keeps every finished
+run on disk, but only the top of the list is displayed). Sort
+order is as described in `10-persistence.md` "Sort order". Each
+row shows:
 
-- Rank number, 1 through 10.
+- Rank number, 1 through 5.
 - The sprite of the run's highest tier, rendered at
   preview-cell scale.
 - The count of that tier, prefixed `x` (e.g., `x3`).
 - The final score, right-aligned for column alignment, using
   the same compact format as the in-play score (see
   `04-visual-style.md` "Score").
-- The date of the run, in the player's locale's short format.
+- The date of the run, formatted DD/MM/YY.
 
-If fewer than ten entries exist, only the populated rows are
+If fewer than five entries exist, only the populated rows are
 shown; the scroll has empty parchment below them.
+
+Below the list, a small footer line shows the total number of
+finished runs, e.g. "27 games played". The footer is hidden
+when the leaderboard is empty (the empty-state message is
+shown instead).
 
 ### Empty state
 

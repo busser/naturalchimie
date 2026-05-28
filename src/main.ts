@@ -78,6 +78,10 @@ async function main(): Promise<void> {
     'leaderboard-empty',
     HTMLDivElement,
   );
+  const leaderboardGamesPlayedEl = requireElement(
+    'leaderboard-games-played',
+    HTMLDivElement,
+  );
 
   // Set --cell and data-layout on the root before awaiting sprites,
   // so the first paint already matches the user's orientation rather
@@ -184,6 +188,7 @@ async function main(): Promise<void> {
       populateLeaderboard(
         leaderboardListEl,
         leaderboardEmptyEl,
+        leaderboardGamesPlayedEl,
         loadScores(storage),
         sprites,
         cellSize,
@@ -220,6 +225,7 @@ async function main(): Promise<void> {
     populateLeaderboard(
       leaderboardListEl,
       leaderboardEmptyEl,
+      leaderboardGamesPlayedEl,
       entries,
       sprites,
       layout.get().cellSize,
@@ -485,10 +491,12 @@ const LEADERBOARD_DEFAULT_SHIFT = 0.45;
 // even a sprite with top extrusion (e.g. a potion cork) stays inside
 // the headroom when shifted upward.
 const LEADERBOARD_ALTERNATION = 0.1;
+const LEADERBOARD_DISPLAY_SIZE = 5;
 
 function populateLeaderboard(
   listEl: HTMLUListElement,
   emptyEl: HTMLDivElement,
+  gamesPlayedEl: HTMLDivElement,
   entries: readonly LeaderboardEntry[],
   sprites: SpriteAtlas,
   cellSize: number,
@@ -496,20 +504,23 @@ function populateLeaderboard(
   listEl.replaceChildren();
   if (entries.length === 0) {
     emptyEl.hidden = false;
+    gamesPlayedEl.hidden = true;
+    gamesPlayedEl.textContent = '';
     return;
   }
   emptyEl.hidden = true;
-  const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'short' });
-  for (const entry of entries) {
-    listEl.appendChild(buildLeaderboardRow(entry, sprites, cellSize, dateFmt));
+  for (const entry of entries.slice(0, LEADERBOARD_DISPLAY_SIZE)) {
+    listEl.appendChild(buildLeaderboardRow(entry, sprites, cellSize));
   }
+  const label = entries.length === 1 ? '1 game played' : `${entries.length} games played`;
+  gamesPlayedEl.textContent = label;
+  gamesPlayedEl.hidden = false;
 }
 
 function buildLeaderboardRow(
   entry: LeaderboardEntry,
   sprites: SpriteAtlas,
   cellSize: number,
-  dateFmt: Intl.DateTimeFormat,
 ): HTMLLIElement {
   const row = document.createElement('li');
   row.className = 'leaderboard__row';
@@ -534,11 +545,19 @@ function buildLeaderboardRow(
   dateEl.className = 'leaderboard__date';
   const parsed = new Date(entry.timestamp);
   dateEl.textContent = Number.isFinite(parsed.getTime())
-    ? dateFmt.format(parsed)
+    ? formatLeaderboardDate(parsed)
     : '';
   row.appendChild(dateEl);
 
   return row;
+}
+
+function formatLeaderboardDate(date: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const day = pad(date.getDate());
+  const month = pad(date.getMonth() + 1);
+  const year = pad(date.getFullYear() % 100);
+  return `${day}/${month}/${year}`;
 }
 
 function drawLeaderboardTally(

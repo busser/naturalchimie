@@ -33,7 +33,7 @@ In scope:
 - A responsive layout that adapts to portrait or landscape viewports,
   and touch input that works alongside keyboard input on any device.
 - Local persistence of the in-progress round (so a reload mid-round
-  resumes where the player left off) and a top-10 leaderboard of
+  resumes where the player left off) and a leaderboard of
   finished runs. Both live in the browser's `localStorage`; nothing
   is sent to a server and nothing syncs between devices.
 - Two small icons in the sidebar (landscape) or bottom strip
@@ -45,7 +45,7 @@ Out of scope:
 
 - Audio (music and sound effects).
 - Any persistence beyond the in-progress round and the local
-  top-10 leaderboard: no accounts, no server sync, no cross-device
+  leaderboard: no accounts, no server sync, no cross-device
   history, no global high-score table.
 - The sidebar character's reaction animations.
 - Any metagame: inventory, cauldron, recipes, gold collection, levels,
@@ -92,7 +92,7 @@ in order the first time, then referenced individually thereafter:
    input mode, plus the rules for switching between layouts and
    input modes at runtime.
 9. `10-persistence.md` — what gets saved to `localStorage` and when:
-   the in-progress round snapshot and the top-10 leaderboard.
+   the in-progress round snapshot and the leaderboard.
 10. `11-restart-and-leaderboard.md` — the restart confirmation
     overlay, the leaderboard view, and how their icons sit in the
     parchment chrome of each layout.
